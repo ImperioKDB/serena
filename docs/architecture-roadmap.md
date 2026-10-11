@@ -261,7 +261,7 @@ Authorization: Bearer <application-token>
 {
   "id": "task_01J...",
   "status": "running",
-  "progress": {"pagesVisited": 2, "sourcesSaved": 2, "currentStep": "extract"},
+  "progress": { "pagesVisited": 2, "sourcesSaved": 2, "currentStep": "extract" },
   "lastEventAt": "2026-10-11T18:01:12Z"
 }
 ```
@@ -558,11 +558,11 @@ After that, review the actual code and test results before deciding whether to a
 
 ## References
 
-[1]: https://playwright.dev/docs/auth "Playwright Authentication"
-[2]: https://crawlee.dev/js/docs/quick-start "Crawlee Quick Start"
-[3]: https://supabase.com/docs/guides/database/connecting-to-postgres "Supabase Connect to your database"
-[4]: https://supabase.com/pricing "Supabase Pricing"
-[5]: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows "GitHub Actions Events that trigger workflows"
-[6]: https://docs.browserbase.com/welcome/quickstarts/playwright "Browserbase Start your first session with Playwright"
-[7]: https://playwright.dev/docs/docker "Playwright Docker"
-[8]: https://render.com/docs/cronjobs "Render Cron Jobs"
+[1]: https://playwright.dev/docs/auth 'Playwright Authentication'
+[2]: https://crawlee.dev/js/docs/quick-start 'Crawlee Quick Start'
+[3]: https://supabase.com/docs/guides/database/connecting-to-postgres 'Supabase Connect to your database'
+[4]: https://supabase.com/pricing 'Supabase Pricing'
+[5]: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows 'GitHub Actions Events that trigger workflows'
+[6]: https://docs.browserbase.com/welcome/quickstarts/playwright 'Browserbase Start your first session with Playwright'
+[7]: https://playwright.dev/docs/docker 'Playwright Docker'
+[8]: https://render.com/docs/cronjobs 'Render Cron Jobs'

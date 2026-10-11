@@ -27,3 +27,5 @@ Authentication, AI planning, crawling, queues, memory search, and production sch
 5. Review the CI result before merging or deploying.
 
 See [`docs/architecture-roadmap.md`](docs/architecture-roadmap.md) for the architecture, security boundaries, cost assumptions, roadmap, and first milestone acceptance criteria.
+
+Implementation details and local verification commands are in [`docs/first-milestone.md`](docs/first-milestone.md).
