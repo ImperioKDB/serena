@@ -18,6 +18,13 @@ Build a deterministic public-page reader using TypeScript and Playwright. It wil
 
 Authentication, AI planning, crawling, queues, memory search, and production scheduling are later phases.
 
+## Current API
+
+- `GET /health` checks that the service is running.
+- `POST /v1/page-reads` reads one explicitly supplied public page and returns structured page data.
+
+Set `SERENA_API_KEY` in a deployment environment to require `Authorization: Bearer <key>` for the page-read endpoint. See [`docs/second-milestone.md`](docs/second-milestone.md) for the request contract and limitations.
+
 ## Development workflow
 
 1. Work from the managed development environment.
