@@ -20,9 +20,7 @@ const app = createApp(
   Fastify({ logger: true }),
 );
 
-try {
-  await app.listen({ host: '0.0.0.0', port });
-} catch (error) {
+void app.listen({ host: '0.0.0.0', port }).catch((error: unknown) => {
   app.log.error(error);
   process.exitCode = 1;
-}
+});
