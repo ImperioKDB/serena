@@ -1,3 +1,5 @@
+import Fastify from 'fastify';
+
 import { createApp } from './api/app.js';
 import { PlaywrightBrowserAdapter } from './browser/playwright-browser-adapter.js';
 import { InMemoryTaskRepository } from './persistence/in-memory-task-repository.js';
@@ -9,10 +11,14 @@ const databaseUrl = process.env.DATABASE_URL;
 const taskRepository = databaseUrl
   ? new PostgresTaskRepository(databaseUrl)
   : new InMemoryTaskRepository();
-const app = createApp(new PlaywrightBrowserAdapter(), {
-  ...(apiKey === undefined ? {} : { apiKey }),
-  taskRepository,
-});
+const app = createApp(
+  new PlaywrightBrowserAdapter(),
+  {
+    ...(apiKey === undefined ? {} : { apiKey }),
+    taskRepository,
+  },
+  Fastify({ logger: true }),
+);
 
 try {
   await app.listen({ host: '0.0.0.0', port });

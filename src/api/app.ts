@@ -49,9 +49,11 @@ function mapBrowserError(error: BrowserReadError): {
   }
 }
 
-export function createApp(adapter: BrowserAdapter, options: AppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: true });
-
+export function createApp(
+  adapter: BrowserAdapter,
+  options: AppOptions = {},
+  app: FastifyInstance = Fastify({ logger: true }),
+): FastifyInstance {
   app.addHook('onRequest', async (request, reply) => {
     if (!options.apiKey || request.url === '/health') {
       return;
