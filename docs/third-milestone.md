@@ -15,6 +15,8 @@ The migration was applied to the new Supabase project `serena` in `eu-west-1`.
 
 The API uses `DATABASE_URL` when present. The connection is configured with a small pool, SSL required, and prepared statements disabled for compatibility with Supabase transaction pooling. If `DATABASE_URL` is absent, the local server falls back to an in-memory repository; this fallback is for development only and is not durable.
 
+The Vercel deployment uses the recognized `src/server.ts` Fastify entrypoint. Vercel can host the API shell and health endpoint, but the browser execution path still requires a compatible browser runtime or managed browser endpoint before production page-reading requests are enabled.
+
 ```text
 DATABASE_URL=postgresql://...
 SERENA_API_KEY=...
