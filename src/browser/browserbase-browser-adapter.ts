@@ -1,4 +1,4 @@
-import Browserbase from '@browserbasehq/sdk';
+import { Browserbase } from '@browserbasehq/sdk';
 import { chromium } from 'playwright-core';
 
 import { validateTargetUrl } from '../core/policy.js';
