@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { createApp } from '../src/api/app.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
+import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
 
 const successfulResult: BrowserReadResult = {
   url: 'https://example.com/article',
@@ -77,6 +78,25 @@ describe('Serena API', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual(successfulResult);
     expect(response.json().requestId).toEqual(expect.any(String));
+  });
+
+  it('persists task lifecycle state when a repository is configured', async () => {
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      { taskRepository: repository },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/page-reads',
+      payload: { target: 'https://example.com/article' },
+    });
+
+    const taskId = response.json().taskId as string;
+    expect(response.statusCode).toBe(200);
+    expect(taskId).toMatch(/^task_/);
+    expect(repository.getTaskStatus(taskId)).toBe('completed');
   });
 
   it('maps browser errors without leaking internal details', async () => {

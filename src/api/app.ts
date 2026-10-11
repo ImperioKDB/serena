@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
 import { BrowserReadError } from '../core/result.js';
+import type { TaskRepository } from '../persistence/task-repository.js';
 
 const pageReadRequestSchema = z
   .object({
@@ -14,6 +15,7 @@ const pageReadRequestSchema = z
 
 export interface AppOptions {
   apiKey?: string;
+  taskRepository?: TaskRepository;
 }
 
 function errorResponse(requestId: string, code: string, message: string) {
@@ -79,7 +81,25 @@ export function createApp(adapter: BrowserAdapter, options: AppOptions = {}): Fa
         );
     }
 
+    let taskId: string | undefined;
     try {
+      if (options.taskRepository) {
+        const task = await options.taskRepository.createTask({
+          requestText: `Read public page: ${parsed.data.target}`,
+          input: {
+            target: parsed.data.target,
+            ...(parsed.data.timeoutMs === undefined ? {} : { timeoutMs: parsed.data.timeoutMs }),
+            ...(parsed.data.allowedDomains === undefined
+              ? {}
+              : { allowedDomains: parsed.data.allowedDomains }),
+          },
+        });
+        taskId = task.id;
+        await options.taskRepository.appendEvent(task.id, 'task_started', {
+          target: parsed.data.target,
+        });
+      }
+
       const readOptions = {
         ...(parsed.data.timeoutMs === undefined ? {} : { timeoutMs: parsed.data.timeoutMs }),
         ...(parsed.data.allowedDomains === undefined
@@ -87,15 +107,37 @@ export function createApp(adapter: BrowserAdapter, options: AppOptions = {}): Fa
           : { allowedDomains: parsed.data.allowedDomains }),
       };
       const result = await adapter.readPage(parsed.data.target, readOptions);
-      return reply.code(200).send({ data: result, requestId: request.id });
+      if (taskId && options.taskRepository) {
+        await options.taskRepository.markCompleted(taskId, result);
+        await options.taskRepository.appendEvent(taskId, 'task_completed', {
+          finalUrl: result.finalUrl,
+        });
+      }
+      return reply.code(200).send({
+        data: result,
+        requestId: request.id,
+        ...(taskId === undefined ? {} : { taskId }),
+      });
     } catch (error) {
       if (error instanceof BrowserReadError) {
+        if (taskId && options.taskRepository) {
+          await options.taskRepository.markFailed(taskId, error.code);
+          await options.taskRepository.appendEvent(taskId, 'task_failed', {
+            errorCode: error.code,
+          });
+        }
         const mapped = mapBrowserError(error);
         return reply
           .code(mapped.statusCode)
           .send(errorResponse(request.id, mapped.code, mapped.message));
       }
 
+      if (taskId && options.taskRepository) {
+        await options.taskRepository.markFailed(taskId, 'INTERNAL_ERROR');
+        await options.taskRepository.appendEvent(taskId, 'task_failed', {
+          errorCode: 'INTERNAL_ERROR',
+        });
+      }
       request.log.error({ err: error }, 'Unexpected page-read failure');
       return reply
         .code(500)

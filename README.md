@@ -25,6 +25,8 @@ Authentication, AI planning, crawling, queues, memory search, and production sch
 
 Set `SERENA_API_KEY` in a deployment environment to require `Authorization: Bearer <key>` for the page-read endpoint. See [`docs/second-milestone.md`](docs/second-milestone.md) for the request contract and limitations.
 
+Persistence configuration and schema details are in [`docs/third-milestone.md`](docs/third-milestone.md).
+
 ## Development workflow
 
 1. Work from the managed development environment.

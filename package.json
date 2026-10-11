@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "fastify": "^5.12.5",
+    "postgres": "^3.4.9",
     "zod": "^4.6.5"
   }
 }
