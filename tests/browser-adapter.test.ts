@@ -27,6 +27,12 @@ beforeAll(async () => {
       return;
     }
 
+    if (request.url === '/private-redirect') {
+      response.writeHead(302, { location: 'https://127.0.0.1/private' });
+      response.end();
+      return;
+    }
+
     response.writeHead(200, { 'content-type': 'text/html' });
     response.end(fixture);
   });
@@ -66,6 +72,14 @@ describe('PlaywrightBrowserAdapter', () => {
 
     expect(result.url).toBe(`${baseUrl}/redirect`);
     expect(result.finalUrl).toBe(`${baseUrl}/article`);
+  });
+
+  it('rejects redirects to private IP destinations with a typed policy error', async () => {
+    const adapter = new PlaywrightBrowserAdapter();
+
+    await expect(
+      adapter.readPage(`${baseUrl}/private-redirect`, { allowLocalHttp: true }),
+    ).rejects.toMatchObject({ code: 'INVALID_TARGET' });
   });
 
   it('rejects non-HTTPS targets unless local HTTP is explicitly enabled', async () => {

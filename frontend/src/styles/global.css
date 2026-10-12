@@ -446,6 +446,7 @@ h3 {
   background: var(--success-soft);
 }
 .verification-badge--proposed,
+.verification-badge--exact_match,
 .verification-badge--review-required,
 .verification-badge--unverified {
   color: var(--warning);

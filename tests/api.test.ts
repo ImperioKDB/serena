@@ -63,6 +63,37 @@ describe('Serena API', () => {
     expect(response.json().error.code).toBe('UNAUTHORIZED');
   });
 
+  it('allows only an explicitly configured HTTPS frontend origin through CORS', async () => {
+    const frontendOrigin = 'https://serena-frontend.vercel.app';
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        corsOrigins: [frontendOrigin],
+      },
+    );
+
+    const allowed = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/research-tasks',
+      headers: {
+        origin: frontendOrigin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+    const unlisted = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/research-tasks',
+      headers: {
+        origin: 'https://unlisted.example',
+        'access-control-request-method': 'POST',
+      },
+    });
+
+    expect(allowed.headers['access-control-allow-origin']).toBe(frontendOrigin);
+    expect(unlisted.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('returns the structured page-read result', async () => {
     const readPage = async (target: string) => {
       expect(target).toBe('https://example.com/article');
@@ -155,10 +186,38 @@ describe('Serena API', () => {
     expect(response.statusCode).toBe(200);
     expect(finding).toMatchObject({
       claim: sharedSentence,
-      status: 'supported',
+      status: 'exact_match',
       verificationMethod: 'exact-text-match',
     });
     expect(finding.evidenceIds).toHaveLength(2);
+  });
+
+  it('does not treat duplicate page content as independent corroboration', async () => {
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async (target) => ({
+        ...successfulResult,
+        url: target,
+        finalUrl: target,
+        text: 'This exact sentence is copied across the same content.',
+      })),
+      { taskRepository: repository },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Check whether duplicates count independently.',
+        sources: ['https://example.com/one', 'https://mirror.example.com/two'],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.sources[1].quality.duplicateOfSourceId).toBe(
+      response.json().data.sources[0].id,
+    );
+    expect(response.json().data.findings).toEqual([]);
   });
 
   it('uses an injected evidence-grounded claim extractor', async () => {
@@ -210,7 +269,7 @@ describe('Serena API', () => {
         ...successfulResult,
         url: target,
         finalUrl: target,
-        text: 'This exact shared statement is long enough for matching.',
+        text: `This exact shared statement is long enough for matching. Unique detail from ${target}.`,
       })),
       {
         taskRepository: repository,

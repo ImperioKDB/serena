@@ -6,6 +6,7 @@ type BadgeStatus = FindingStatus | 'review-required' | 'unverified';
 
 const labels: Record<BadgeStatus, string> = {
   supported: 'Supported',
+  exact_match: 'Exact text match',
   proposed: 'Proposed',
   disputed: 'Disputed',
   'review-required': 'Review required',

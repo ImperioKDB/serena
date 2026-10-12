@@ -6,9 +6,15 @@ import { PlaywrightBrowserAdapter } from './browser/playwright-browser-adapter.j
 import { InMemoryTaskRepository } from './persistence/in-memory-task-repository.js';
 import { PostgresTaskRepository } from './persistence/postgres-task-repository.js';
 import { OpenAiCompatibleClaimExtractor } from './research/claim-extractor.js';
+import { assertProductionApiKey } from './core/runtime-config.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const apiKey = process.env.SERENA_API_KEY;
+assertProductionApiKey(apiKey);
+const corsOrigins = (process.env.SERENA_CORS_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const browserbaseApiKey = process.env.BROWSERBASE_API_KEY;
 const browserbaseProjectId = process.env.BROWSERBASE_PROJECT_ID;
 const databaseUrl = process.env.DATABASE_URL;
@@ -29,6 +35,7 @@ const app = createApp(
   browserAdapter,
   {
     ...(apiKey === undefined ? {} : { apiKey }),
+    ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
     taskRepository,
     ...(claimExtractor === undefined ? {} : { claimExtractor }),
   },

@@ -21,7 +21,7 @@ export interface ResearchEvidenceRecord {
 
 export interface ResearchFinding {
   claim: string;
-  status: 'proposed' | 'supported';
+  status: 'proposed' | 'supported' | 'exact_match';
   verificationMethod: 'exact-text-match' | 'llm-evidence-grounded';
   uncertainty?: string;
   evidenceIds: string[];

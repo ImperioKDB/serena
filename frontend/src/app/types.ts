@@ -1,4 +1,4 @@
-export type FindingStatus = 'proposed' | 'supported' | 'disputed';
+export type FindingStatus = 'proposed' | 'supported' | 'disputed' | 'exact_match';
 
 export interface SourceQuality {
   domain: string;

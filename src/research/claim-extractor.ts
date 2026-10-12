@@ -21,6 +21,7 @@ export interface ClaimExtractor {
   extract(input: {
     request: string;
     evidence: ResearchEvidenceRecord[];
+    signal?: AbortSignal;
   }): Promise<AiClaimFinding[]>;
 }
 
@@ -48,6 +49,7 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
   public async extract(input: {
     request: string;
     evidence: ResearchEvidenceRecord[];
+    signal?: AbortSignal;
   }): Promise<AiClaimFinding[]> {
     const evidenceText = input.evidence
       .map(
@@ -61,6 +63,7 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
       },
+      signal: input.signal ?? AbortSignal.timeout(15_000),
       body: JSON.stringify({
         model: this.model,
         messages: [

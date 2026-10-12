@@ -2,11 +2,15 @@ import { Browserbase } from '@browserbasehq/sdk';
 import { chromium } from 'playwright-core';
 
 import { validateTargetUrl } from '../core/policy.js';
+import { validatePublicDestination } from '../core/policy.js';
 import { BrowserReadError, type BrowserReadResult } from '../core/result.js';
 import type { BrowserAdapter, BrowserReadOptions } from './browser-adapter.js';
+import { installRequestGuard } from './request-guard.js';
+import { resolveSafeRedirects } from './redirect-resolver.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_SESSION_TIMEOUT_SECONDS = 21_600;
+const MAX_EXTRACTED_TEXT_CHARS = 50_000;
 
 export class BrowserbaseBrowserAdapter implements BrowserAdapter {
   private readonly client: Browserbase;
@@ -22,9 +26,10 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
     options: BrowserReadOptions = {},
   ): Promise<BrowserReadResult> {
     const validatedTarget = validateTargetUrl(target, options);
+    await validatePublicDestination(validatedTarget, options);
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const resolvedTarget = await resolveSafeRedirects(validatedTarget, { ...options, timeoutMs });
     const startedAt = performance.now();
-    const retrievedAt = new Date().toISOString();
     const sessionTimeoutSeconds = Math.min(
       MAX_SESSION_TIMEOUT_SECONDS,
       Math.max(60, Math.ceil(timeoutMs / 1000) + 30),
@@ -39,23 +44,41 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
 
     try {
       const context = browser.contexts()[0] ?? (await browser.newContext());
+      const requestGuard = await installRequestGuard(context, options);
       const page = context.pages()[0] ?? (await context.newPage());
       page.setDefaultNavigationTimeout(timeoutMs);
+      page.setDefaultTimeout(timeoutMs);
 
       try {
-        await page.goto(validatedTarget.toString(), { waitUntil: 'domcontentloaded' });
+        await page.goto(resolvedTarget.toString(), { waitUntil: 'domcontentloaded' });
         const title = await page.title();
-        const text = await page.locator('body').innerText();
+        const text = await page
+          .locator('body')
+          .evaluate(
+            (body, maxChars) => (body as HTMLElement).innerText.slice(0, maxChars),
+            MAX_EXTRACTED_TEXT_CHARS,
+          );
 
         return {
           url: validatedTarget.toString(),
           finalUrl: page.url(),
           title,
           text,
-          retrievedAt,
+          retrievedAt: new Date().toISOString(),
           durationMs: Math.round(performance.now() - startedAt),
         };
       } catch (error) {
+        const policyError = requestGuard.getPolicyError();
+        if (policyError) throw policyError;
+        const observedUrl = page.url();
+        if (/^https?:/iu.test(observedUrl) && observedUrl !== resolvedTarget.toString()) {
+          try {
+            const observedTarget = validateTargetUrl(observedUrl, options);
+            await validatePublicDestination(observedTarget, options);
+          } catch (targetError) {
+            if (targetError instanceof BrowserReadError) throw targetError;
+          }
+        }
         if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
           throw new BrowserReadError(
             'NAVIGATION_TIMEOUT',

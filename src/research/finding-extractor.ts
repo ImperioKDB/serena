@@ -11,10 +11,14 @@ function normalize(sentence: string): string {
   return sentence.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
 }
 
-export function extractCrossSourceFindings(evidence: ResearchEvidenceRecord[]): ResearchFinding[] {
+export function extractCrossSourceFindings(
+  evidence: ResearchEvidenceRecord[],
+  excludedSourceIds: ReadonlySet<string> = new Set(),
+): ResearchFinding[] {
   const matches = new Map<string, { claim: string; evidenceIds: Set<string> }>();
 
   for (const item of evidence) {
+    if (excludedSourceIds.has(item.sourceId)) continue;
     for (const sentence of sentences(item.excerpt)) {
       const key = normalize(sentence);
       const match = matches.get(key) ?? { claim: sentence, evidenceIds: new Set<string>() };
@@ -27,7 +31,7 @@ export function extractCrossSourceFindings(evidence: ResearchEvidenceRecord[]): 
     .filter((match) => match.evidenceIds.size >= 2)
     .map((match) => ({
       claim: match.claim,
-      status: 'supported' as const,
+      status: 'exact_match' as const,
       verificationMethod: 'exact-text-match' as const,
       evidenceIds: [...match.evidenceIds],
     }))

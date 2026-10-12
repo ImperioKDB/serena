@@ -6,6 +6,9 @@ import { assessSourceQuality } from './source-quality.js';
 import type { ResearchResult } from './types.js';
 
 const MAX_EVIDENCE_CHARS = 500;
+const MAX_RESEARCH_DURATION_MS = 65_000;
+const DEFAULT_SOURCE_TIMEOUT_MS = 10_000;
+const MAX_CLAIM_EXTRACTION_DURATION_MS = 15_000;
 
 export interface ResearchServiceInput {
   request: string;
@@ -36,6 +39,7 @@ export class ResearchService {
     await this.repository.appendEvent(task.id, 'task_started', {
       sourceCount: input.sources.length,
     });
+    const taskStartedAt = performance.now();
 
     const sourceResults: ResearchResult['sources'] = [];
     const evidence: ResearchResult['evidence'] = [];
@@ -47,7 +51,17 @@ export class ResearchService {
 
     try {
       for (const sourceUrl of input.sources) {
-        const page = await this.adapter.readPage(sourceUrl, readOptions);
+        const remainingMs = Math.floor(
+          MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
+        );
+        if (remainingMs < 100) {
+          throw new Error('Research task exceeded its total time budget.');
+        }
+        const pageTimeoutMs = Math.min(input.timeoutMs ?? DEFAULT_SOURCE_TIMEOUT_MS, remainingMs);
+        const page = await this.adapter.readPage(sourceUrl, {
+          ...readOptions,
+          timeoutMs: pageTimeoutMs,
+        });
         const source = await this.repository.recordSource(task.id, page);
         const quality = assessSourceQuality(page, source.id, sourceSnapshots);
         sourceSnapshots.push({ id: source.id, hash: quality.contentHash });
@@ -88,18 +102,28 @@ export class ResearchService {
         extractionMethod: 'visible-text-prefix' as const,
         verificationStatus: item.verificationStatus,
       }));
-      let findings = extractCrossSourceFindings(evidenceRecords);
+      const duplicateSourceIds = new Set(
+        sourceResults
+          .filter((source) => source.quality.duplicateOfSourceId !== undefined)
+          .map((source) => source.id),
+      );
+      let findings = extractCrossSourceFindings(evidenceRecords, duplicateSourceIds);
       if (this.claimExtractor) {
         try {
+          const remainingMs = Math.floor(
+            MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
+          );
+          if (remainingMs < 1) throw new Error('Research task exceeded its total time budget.');
           const extractedFindings = await this.claimExtractor.extract({
             request: input.request,
             evidence: evidenceRecords,
+            signal: AbortSignal.timeout(Math.min(MAX_CLAIM_EXTRACTION_DURATION_MS, remainingMs)),
           });
           findings = extractedFindings.map(({ reviewRequired, ...finding }) =>
             reviewRequired === undefined ? finding : { ...finding, reviewRequired },
           );
           const exactFindings = new Map(
-            extractCrossSourceFindings(evidenceRecords).map((finding) => [
+            extractCrossSourceFindings(evidenceRecords, duplicateSourceIds).map((finding) => [
               finding.claim.toLocaleLowerCase(),
               finding,
             ]),

@@ -28,8 +28,32 @@ const researchRequestSchema = z
 
 export interface AppOptions {
   apiKey?: string;
+  corsOrigins?: readonly string[];
   taskRepository?: TaskRepository;
   claimExtractor?: ClaimExtractor;
+}
+
+function normalizeCorsOrigin(origin: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    throw new Error(`Invalid CORS origin configuration: ${origin}`);
+  }
+  const isLocalDevelopmentOrigin =
+    parsed.protocol === 'http:' &&
+    (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash ||
+    (parsed.protocol !== 'https:' && !isLocalDevelopmentOrigin)
+  ) {
+    throw new Error(`CORS entries must be HTTPS origins (or localhost for development): ${origin}`);
+  }
+  return parsed.origin;
 }
 
 function errorResponse(requestId: string, code: string, message: string) {
@@ -68,8 +92,14 @@ export function createApp(
   options: AppOptions = {},
   app: FastifyInstance = Fastify({ logger: true }),
 ): FastifyInstance {
+  const allowedOrigins = [
+    'https://hoppscotch.io',
+    'https://www.hoppscotch.io',
+    'http://localhost:3000',
+    ...(options.corsOrigins ?? []),
+  ].map(normalizeCorsOrigin);
   void app.register(cors, {
-    origin: ['https://hoppscotch.io', 'https://www.hoppscotch.io', 'http://localhost:3000'],
+    origin: [...new Set(allowedOrigins)],
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
