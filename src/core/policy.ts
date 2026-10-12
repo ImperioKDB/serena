@@ -178,19 +178,19 @@ export function validateTargetUrl(rawTarget: string, options: TargetPolicyOption
   return target;
 }
 
-export async function validatePublicDestination(
+export async function resolvePublicAddresses(
   target: URL,
   options: TargetPolicyOptions = {},
   resolveAddresses: (hostname: string) => Promise<string[]> = async (hostname) =>
     (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
-): Promise<void> {
+): Promise<string[]> {
   const hostname = normalizedHostname(target.hostname);
   if (
     options.allowLocalHttp === true &&
     target.protocol === 'http:' &&
     isLoopbackAddress(hostname)
   ) {
-    return;
+    return [hostname];
   }
   if (isIP(hostname) !== 0) {
     if (isForbiddenAddress(hostname)) {
@@ -199,7 +199,7 @@ export async function validatePublicDestination(
         'Private and reserved IP addresses are not allowed.',
       );
     }
-    return;
+    return [hostname];
   }
 
   let addresses: string[];
@@ -214,4 +214,13 @@ export async function validatePublicDestination(
       'Target resolves to a private or reserved IP address.',
     );
   }
+  return addresses;
+}
+
+export async function validatePublicDestination(
+  target: URL,
+  options: TargetPolicyOptions = {},
+  resolveAddresses?: (hostname: string) => Promise<string[]>,
+): Promise<void> {
+  await resolvePublicAddresses(target, options, resolveAddresses);
 }

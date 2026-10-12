@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { createApp } from '../src/api/app.js';
@@ -47,6 +47,20 @@ describe('Serena API', () => {
     expect(response.json().error.code).toBe('INVALID_REQUEST');
   });
 
+  it('rejects request bodies larger than 64 KiB before route validation', async () => {
+    const readPage = vi.fn(async () => successfulResult);
+    app = createApp(adapterFor(readPage));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/page-reads',
+      payload: { target: 'https://example.com/article', padding: 'x'.repeat(70_000) },
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(readPage).not.toHaveBeenCalled();
+  });
+
   it('requires a bearer token when API protection is configured', async () => {
     app = createApp(
       adapterFor(async () => successfulResult),
@@ -61,6 +75,29 @@ describe('Serena API', () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('rejects over-capacity requests before starting a browser read', async () => {
+    const readPage = vi.fn(async () => successfulResult);
+    const acquireRequest = vi.fn(async () => 'concurrency_limited' as const);
+    const releaseRequest = vi.fn(async () => undefined);
+    app = createApp(adapterFor(readPage), {
+      apiKey: 'test-key',
+      requestAdmission: { acquireRequest, releaseRequest },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/page-reads',
+      headers: { authorization: 'Bearer test-key' },
+      payload: { target: 'https://example.com/article' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.headers['retry-after']).toBe('5');
+    expect(response.json().error.code).toBe('CONCURRENCY_LIMITED');
+    expect(readPage).not.toHaveBeenCalled();
+    expect(releaseRequest).not.toHaveBeenCalled();
   });
 
   it('allows only an explicitly configured HTTPS frontend origin through CORS', async () => {

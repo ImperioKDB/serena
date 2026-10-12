@@ -1,6 +1,7 @@
 import { validatePublicDestination, validateTargetUrl } from '../core/policy.js';
 import { BrowserReadError } from '../core/result.js';
 import type { BrowserReadOptions } from './browser-adapter.js';
+import { fetchPublicResponse } from './safe-http.js';
 
 const MAX_REDIRECT_HOPS = 5;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -14,28 +15,29 @@ export async function resolveSafeRedirects(
 
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
     await validatePublicDestination(currentTarget, options);
-    let response: Response;
-    const signal = AbortSignal.timeout(timeoutMs);
+    let response;
     try {
-      response = await fetch(currentTarget, {
+      response = await fetchPublicResponse(currentTarget.toString(), {
         method: 'GET',
-        redirect: 'manual',
-        signal,
+        headers: {},
+        ...options,
+        timeoutMs,
+        maxResponseBytes: 64 * 1024,
       });
-    } catch {
-      if (signal.aborted) {
+    } catch (error) {
+      if (error instanceof BrowserReadError && error.code === 'NAVIGATION_TIMEOUT') {
         throw new BrowserReadError(
           'NAVIGATION_TIMEOUT',
           `Navigation timed out after ${timeoutMs} ms.`,
           currentTarget.toString(),
         );
       }
+      if (error instanceof BrowserReadError) throw error;
       throw new BrowserReadError('NAVIGATION_FAILED', 'Could not safely resolve the target page.');
     }
 
-    const location = response.headers.get('location');
-    const isRedirect = response.status >= 300 && response.status < 400;
-    await response.body?.cancel().catch(() => undefined);
+    const location = response.headers.location;
+    const isRedirect = response.statusCode >= 300 && response.statusCode < 400;
     if (!isRedirect || !location) return currentTarget;
     if (hop === MAX_REDIRECT_HOPS) {
       throw new BrowserReadError('NAVIGATION_FAILED', 'Page exceeded its redirect budget.');

@@ -75,7 +75,7 @@ describe('URL and destination policy', () => {
     ).rejects.toThrowError('Target hostname could not be safely resolved.');
   });
 
-  it('aborts an intercepted redirect request to a private destination', async () => {
+  it('aborts a direct private request before opening a socket', async () => {
     let onRoute: ((route: never) => Promise<void>) | undefined;
     const context = {
       route: vi.fn(async (_pattern: string, handler: (route: never) => Promise<void>) => {
@@ -85,12 +85,13 @@ describe('URL and destination policy', () => {
     const guard = await installRequestGuard(context as never, {});
     const abort = vi.fn(async () => undefined);
     const route = {
-      request: () => ({ url: () => 'https://8.8.8.8/start', resourceType: () => 'document' }),
+      request: () => ({
+        url: () => 'https://127.0.0.1/private',
+        resourceType: () => 'document',
+        method: () => 'GET',
+        isNavigationRequest: () => true,
+      }),
       abort,
-      fetch: vi.fn(async () => ({
-        status: () => 302,
-        headers: () => ({ location: 'https://127.0.0.1/private' }),
-      })),
       fulfill: vi.fn(async () => undefined),
       continue: vi.fn(async () => undefined),
     };

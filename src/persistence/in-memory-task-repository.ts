@@ -7,6 +7,11 @@ import type {
   TaskRepository,
   TaskStatus,
 } from './task-repository.js';
+import {
+  API_REQUEST_LIMITS,
+  type AdmissionDecision,
+  type RequestAdmissionStore,
+} from './request-admission-store.js';
 
 interface StoredTask extends ResearchTaskRecord {
   requestText: string;
@@ -19,8 +24,13 @@ interface StoredTask extends ResearchTaskRecord {
   evidence: ResearchEvidenceRecord[];
 }
 
-export class InMemoryTaskRepository implements TaskRepository {
+export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionStore {
   private readonly tasks = new Map<string, StoredTask>();
+  private readonly requestWindows = new Map<
+    string,
+    { windowStartedAt: number; requestCount: number; leases: Map<string, number> }
+  >();
+  private readonly leaseKeys = new Map<string, string>();
 
   public async createTask(input: CreateTaskInput): Promise<ResearchTaskRecord> {
     const id = `task_${crypto.randomUUID()}`;
@@ -93,6 +103,38 @@ export class InMemoryTaskRepository implements TaskRepository {
     const task = this.requireTask(taskId);
     task.status = 'failed';
     task.errorCode = errorCode;
+  }
+
+  public async acquireRequest(requestId: string, keyHash: string): Promise<AdmissionDecision> {
+    const now = Date.now();
+    let state = this.requestWindows.get(keyHash);
+    if (!state) {
+      state = { windowStartedAt: now, requestCount: 0, leases: new Map() };
+      this.requestWindows.set(keyHash, state);
+    } else if (now - state.windowStartedAt >= API_REQUEST_LIMITS.windowSeconds * 1000) {
+      state.windowStartedAt = now;
+      state.requestCount = 0;
+    }
+    for (const [leaseId, expiresAt] of state.leases) {
+      if (expiresAt <= now) {
+        state.leases.delete(leaseId);
+        this.leaseKeys.delete(leaseId);
+      }
+    }
+    if (state.requestCount >= API_REQUEST_LIMITS.requestsPerWindow) return 'rate_limited';
+    if (state.leases.size >= API_REQUEST_LIMITS.concurrentRequests) return 'concurrency_limited';
+
+    state.requestCount += 1;
+    state.leases.set(requestId, now + API_REQUEST_LIMITS.leaseSeconds * 1000);
+    this.leaseKeys.set(requestId, keyHash);
+    return 'admitted';
+  }
+
+  public async releaseRequest(requestId: string): Promise<void> {
+    const keyHash = this.leaseKeys.get(requestId);
+    if (!keyHash) return;
+    this.requestWindows.get(keyHash)?.leases.delete(requestId);
+    this.leaseKeys.delete(requestId);
   }
 
   public getTaskStatus(taskId: string): TaskStatus | undefined {

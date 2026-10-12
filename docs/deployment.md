@@ -13,17 +13,21 @@ Project-level SSO protection is disabled on the existing API project because the
 Configure sensitive values only in Vercel's encrypted/sensitive environment-variable store:
 
 - `SERENA_API_KEY`: required for all production server startup; the API fails closed if it is blank or missing.
-- `DATABASE_URL`: Supabase Postgres connection string for project `nmlhcofasxsngmvjjxti`; without it, the in-memory repository is suitable only for development or health checks.
+- `DATABASE_URL`: Supabase Postgres connection string for project `nmlhcofasxsngmvjjxti`; it is required in production for shared request admission and research persistence. The API fails closed if it is missing.
 - `BROWSERBASE_API_KEY`: enables managed Playwright sessions.
 - `BROWSERBASE_PROJECT_ID`: optional explicit Browserbase project ID; Browserbase may infer it from the API key.
 - `SERENA_CORS_ORIGINS`: optional comma-separated exact HTTPS origins allowed by the API, for example `https://serena-frontend.example.vercel.app`. Do not use `*`, paths, or a broad Vercel wildcard. Add the actual deployed dashboard origin after the frontend project is created, then redeploy the API.
 
 The frontend's `VITE_SERENA_API_URL` is a public API base URL, not a secret. The frontend must never receive `SERENA_API_KEY`, database credentials, or provider secrets. Users enter the bearer key in the dashboard for its request; the app does not persist it to local storage.
 
-## Browser and research budgets
+## Browser and request budgets
 
-The browser rejects non-HTTPS targets by default (with a loopback-only HTTP exception for local fixtures), credentials in URLs, non-default HTTPS ports, private/special-purpose IP literals and DNS answers, and hosts outside an optional domain allowlist. The initial redirect chain is resolved manually with a five-hop cap and each target is checked before continuing. Browser requests use redirect-disabled fetches; unexpected redirects during page loading are rejected. Images, media and fonts are not fetched, each page is limited to 80 routed requests, extracted text is capped at 50,000 characters, and a research task has a 65-second orchestration budget with at most 15 seconds for claim extraction.
+The browser rejects non-HTTPS targets by default (with a loopback-only HTTP exception for local fixtures), credentials in URLs, non-default HTTPS ports, private/special-purpose IP literals and DNS answers, and hosts outside an optional domain allowlist. For each HTTP request, Serena resolves DNS once, rejects the target if any answer is private/reserved, then opens a direct socket to a vetted answer while preserving the requested Host header and TLS server name. Redirect hops use this same guarded client and are limited to five. In-page requests also pass through the same pinned client; no automatic redirect is followed.
 
-**Important residual risk:** DNS is checked before the HTTP request, but the browser/request runtime does not pin the connection to the checked IP. DNS rebinding or a resolver/network race is therefore not eliminated by application checks alone. Before treating arbitrary public URLs as a fully hardened production capability, put browser egress behind a network layer that enforces public-only destination IPs at connection time (including redirects), or use an equivalent provider-level egress policy. Continue to use least-privilege credentials and never submit credentials to untrusted sites.
+Inbound JSON is limited to 64 KiB. The browser only relays GET/HEAD, blocks images/media/fonts, limits a page to 80 requests, allows up to 2 MiB decoded per resource and 8 MiB total, and caps extracted text at 50,000 characters. A research task has a 65-second orchestration budget with at most 15 seconds for claim extraction. Production API calls are limited per API-key hash to 20 successful admissions per 60-second fixed window and two concurrent leases; leases expire after 120 seconds if a function is terminated.
+
+Before deploying the API code, apply migration `20261012204800_request_admission_limits.sql` to the Serena Supabase project. The deploy must include `DATABASE_URL`; the API fails closed if the admission functions cannot be reached. See [security controls](./security-controls.md) for design rationale and provider research.
+
+**Important residual risk:** this application-layer guard protects HTTP requests routed through Serena’s own guarded browser adapters. Any future outbound client must use the same pinned HTTP helper or be protected by a provider/network egress policy. The guard is not a general outbound firewall and does not make arbitrary browser actions safe. Continue to use least-privilege credentials, isolate sessions, and require explicit human approval before consequential actions.
 
 Exact repeated sentences are labeled **Exact text match**, not **Supported**. Content identified as duplicate is excluded from independent exact-match corroboration. This does not establish the truth of a claim; AI-generated findings remain proposed and source evidence remains reviewable.

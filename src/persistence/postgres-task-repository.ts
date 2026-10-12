@@ -2,6 +2,11 @@ import postgres from 'postgres';
 
 import type { BrowserReadResult } from '../core/result.js';
 import type { ResearchEvidenceRecord, ResearchSourceRecord } from '../research/types.js';
+import {
+  API_REQUEST_LIMITS,
+  type AdmissionDecision,
+  type RequestAdmissionStore,
+} from './request-admission-store.js';
 import type {
   CreateEvidenceInput,
   CreateTaskInput,
@@ -9,7 +14,7 @@ import type {
   TaskRepository,
 } from './task-repository.js';
 
-export class PostgresTaskRepository implements TaskRepository {
+export class PostgresTaskRepository implements TaskRepository, RequestAdmissionStore {
   private readonly sql: ReturnType<typeof postgres>;
 
   public constructor(databaseUrl: string) {
@@ -130,6 +135,25 @@ export class PostgresTaskRepository implements TaskRepository {
       set status = 'failed', error_code = ${errorCode}, finished_at = now()
       where id = ${taskId}
     `;
+  }
+
+  public async acquireRequest(requestId: string, keyHash: string): Promise<AdmissionDecision> {
+    const [result] = await this.sql<{ decision: AdmissionDecision }[]>`
+      select public.serena_admit_request(
+        ${keyHash}::text,
+        ${requestId}::uuid,
+        ${API_REQUEST_LIMITS.windowSeconds}::integer,
+        ${API_REQUEST_LIMITS.requestsPerWindow}::integer,
+        ${API_REQUEST_LIMITS.concurrentRequests}::integer,
+        ${API_REQUEST_LIMITS.leaseSeconds}::integer
+      ) as decision
+    `;
+    if (!result) throw new Error('The database did not return an admission decision.');
+    return result.decision;
+  }
+
+  public async releaseRequest(requestId: string): Promise<void> {
+    await this.sql`select public.serena_release_request(${requestId}::uuid)`;
   }
 
   public async close(): Promise<void> {

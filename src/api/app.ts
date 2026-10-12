@@ -1,9 +1,12 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import { createHmac, randomUUID } from 'node:crypto';
+
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { z } from 'zod';
 
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
 import { BrowserReadError } from '../core/result.js';
+import type { RequestAdmissionStore } from '../persistence/request-admission-store.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from '../research/claim-extractor.js';
 import { ResearchService } from '../research/research-service.js';
@@ -29,9 +32,12 @@ const researchRequestSchema = z
 export interface AppOptions {
   apiKey?: string;
   corsOrigins?: readonly string[];
+  requestAdmission?: RequestAdmissionStore;
   taskRepository?: TaskRepository;
   claimExtractor?: ClaimExtractor;
 }
+
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 function normalizeCorsOrigin(origin: string): string {
   let parsed: URL;
@@ -82,6 +88,18 @@ function mapBrowserError(error: BrowserReadError): {
       };
     case 'NAVIGATION_FAILED':
       return { statusCode: 502, code: error.code, message: 'The page could not be read.' };
+    case 'RESPONSE_TOO_LARGE':
+      return {
+        statusCode: 502,
+        code: error.code,
+        message: 'The page exceeded Serena’s response-size limit.',
+      };
+    case 'REQUEST_BUDGET_EXCEEDED':
+      return {
+        statusCode: 502,
+        code: error.code,
+        message: 'The page exceeded Serena’s request budget.',
+      };
     case 'READ_FAILED':
       return { statusCode: 500, code: error.code, message: 'The browser reader failed.' };
   }
@@ -90,7 +108,11 @@ function mapBrowserError(error: BrowserReadError): {
 export function createApp(
   adapter: BrowserAdapter,
   options: AppOptions = {},
-  app: FastifyInstance = Fastify({ logger: true }),
+  app: FastifyInstance = Fastify({
+    logger: true,
+    bodyLimit: MAX_REQUEST_BODY_BYTES,
+    requestTimeout: 15_000,
+  }),
 ): FastifyInstance {
   const allowedOrigins = [
     'https://hoppscotch.io',
@@ -104,16 +126,73 @@ export function createApp(
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
 
+  const activeLeases = new WeakMap<FastifyRequest, string>();
+  const limiterKey = options.apiKey
+    ? createHmac('sha256', options.apiKey).update('serena-request-admission-v1').digest('hex')
+    : undefined;
+
   app.addHook('onRequest', async (request, reply) => {
-    if (!options.apiKey || request.url === '/health') {
+    if (request.url === '/health' || request.method === 'OPTIONS') {
       return;
     }
 
-    const authorization = request.headers.authorization;
-    if (authorization !== `Bearer ${options.apiKey}`) {
+    if (options.apiKey) {
+      const authorization = request.headers.authorization;
+      if (authorization !== `Bearer ${options.apiKey}`) {
+        await reply
+          .code(401)
+          .send(errorResponse(request.id, 'UNAUTHORIZED', 'A valid bearer token is required.'));
+        return;
+      }
+    }
+
+    if (!options.apiKey || !limiterKey || !options.requestAdmission) return;
+
+    const leaseId = randomUUID();
+    let decision;
+    try {
+      decision = await options.requestAdmission.acquireRequest(leaseId, limiterKey);
+    } catch (error) {
+      request.log.error({ err: error }, 'Request admission store unavailable');
       await reply
-        .code(401)
-        .send(errorResponse(request.id, 'UNAUTHORIZED', 'A valid bearer token is required.'));
+        .code(503)
+        .send(
+          errorResponse(
+            request.id,
+            'REQUEST_GUARD_UNAVAILABLE',
+            'Serena is temporarily unavailable.',
+          ),
+        );
+      return;
+    }
+
+    if (decision !== 'admitted') {
+      const isRateLimited = decision === 'rate_limited';
+      await reply
+        .header('retry-after', isRateLimited ? '60' : '5')
+        .code(isRateLimited ? 429 : 503)
+        .send(
+          errorResponse(
+            request.id,
+            isRateLimited ? 'RATE_LIMITED' : 'CONCURRENCY_LIMITED',
+            isRateLimited
+              ? 'The request rate limit has been reached; retry shortly.'
+              : 'Serena is at its active-request limit; retry shortly.',
+          ),
+        );
+      return;
+    }
+    activeLeases.set(request, leaseId);
+  });
+
+  app.addHook('onResponse', async (request) => {
+    const leaseId = activeLeases.get(request);
+    if (!leaseId || !options.requestAdmission) return;
+    activeLeases.delete(request);
+    try {
+      await options.requestAdmission.releaseRequest(leaseId);
+    } catch (error) {
+      request.log.error({ err: error }, 'Could not release request admission lease');
     }
   });
 

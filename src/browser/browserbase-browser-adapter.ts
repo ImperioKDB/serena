@@ -2,7 +2,6 @@ import { Browserbase } from '@browserbasehq/sdk';
 import { chromium } from 'playwright-core';
 
 import { validateTargetUrl } from '../core/policy.js';
-import { validatePublicDestination } from '../core/policy.js';
 import { BrowserReadError, type BrowserReadResult } from '../core/result.js';
 import type { BrowserAdapter, BrowserReadOptions } from './browser-adapter.js';
 import { installRequestGuard } from './request-guard.js';
@@ -26,7 +25,6 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
     options: BrowserReadOptions = {},
   ): Promise<BrowserReadResult> {
     const validatedTarget = validateTargetUrl(target, options);
-    await validatePublicDestination(validatedTarget, options);
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const resolvedTarget = await resolveSafeRedirects(validatedTarget, { ...options, timeoutMs });
     const startedAt = performance.now();
@@ -70,15 +68,6 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
       } catch (error) {
         const policyError = requestGuard.getPolicyError();
         if (policyError) throw policyError;
-        const observedUrl = page.url();
-        if (/^https?:/iu.test(observedUrl) && observedUrl !== resolvedTarget.toString()) {
-          try {
-            const observedTarget = validateTargetUrl(observedUrl, options);
-            await validatePublicDestination(observedTarget, options);
-          } catch (targetError) {
-            if (targetError instanceof BrowserReadError) throw targetError;
-          }
-        }
         if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
           throw new BrowserReadError(
             'NAVIGATION_TIMEOUT',

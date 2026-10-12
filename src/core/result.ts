@@ -1,5 +1,10 @@
 export type BrowserReadErrorCode =
-  'INVALID_TARGET' | 'NAVIGATION_TIMEOUT' | 'NAVIGATION_FAILED' | 'READ_FAILED';
+  | 'INVALID_TARGET'
+  | 'NAVIGATION_TIMEOUT'
+  | 'NAVIGATION_FAILED'
+  | 'RESPONSE_TOO_LARGE'
+  | 'REQUEST_BUDGET_EXCEEDED'
+  | 'READ_FAILED';
 
 export interface BrowserReadResult {
   url: string;
