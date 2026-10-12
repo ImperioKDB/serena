@@ -37,6 +37,8 @@ The response contains:
 
 Each source and evidence item is also stored in Supabase tables `research_sources` and `research_evidence`. Lifecycle events include `task_started`, `source_completed`, and `task_completed`.
 
+Row Level Security is enabled on all four research tables. Serena accesses them through its server-side database connection; no direct anon-client policies are configured.
+
 ## Deliberate limitations
 
 - URLs must be supplied by the caller; discovery/search is not included yet.
