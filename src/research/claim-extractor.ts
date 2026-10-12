@@ -114,8 +114,7 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
             },
           },
         },
-        max_completion_tokens: 3000,
-        reasoning: { effort: 'minimal' },
+        max_tokens: 3000,
       }),
     });
 
