@@ -129,6 +129,37 @@ describe('Serena API', () => {
     expect(repository.getEvidence(body.taskId)).toHaveLength(2);
   });
 
+  it('returns an evidence-linked finding for an exact cross-source sentence match', async () => {
+    const repository = new InMemoryTaskRepository();
+    const sharedSentence = 'This identical statement appears in both sources.';
+    let index = 0;
+    const readPage = async (target: string) => ({
+      ...successfulResult,
+      url: target,
+      finalUrl: target,
+      text: `${sharedSentence} Unique source detail ${++index}.`,
+    });
+    app = createApp(adapterFor(readPage), { taskRepository: repository });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Find exact agreement.',
+        sources: ['https://example.com/one', 'https://example.com/two'],
+      },
+    });
+
+    const finding = response.json().data.findings[0];
+    expect(response.statusCode).toBe(200);
+    expect(finding).toMatchObject({
+      claim: sharedSentence,
+      status: 'supported',
+      verificationMethod: 'exact-text-match',
+    });
+    expect(finding.evidenceIds).toHaveLength(2);
+  });
+
   it('rejects research requests that exceed the source budget', async () => {
     const repository = new InMemoryTaskRepository();
     app = createApp(

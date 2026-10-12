@@ -34,5 +34,10 @@ export interface ResearchResult {
     locator: string;
     verificationStatus: EvidenceVerificationStatus;
   }>;
-  findings: [];
+  findings: Array<{
+    claim: string;
+    status: 'supported';
+    verificationMethod: 'exact-text-match';
+    evidenceIds: string[];
+  }>;
 }

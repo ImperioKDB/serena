@@ -1,5 +1,6 @@
 import type { BrowserAdapter, BrowserReadOptions } from '../browser/browser-adapter.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
+import { extractCrossSourceFindings } from './finding-extractor.js';
 import type { ResearchResult } from './types.js';
 
 const MAX_EVIDENCE_CHARS = 500;
@@ -75,7 +76,17 @@ export class ResearchService {
         request: input.request,
         sources: sourceResults,
         evidence,
-        findings: [],
+        findings: extractCrossSourceFindings(
+          evidence.map((item) => ({
+            id: item.id,
+            taskId: task.id,
+            sourceId: item.sourceId,
+            excerpt: item.excerpt,
+            locator: item.locator,
+            extractionMethod: 'visible-text-prefix' as const,
+            verificationStatus: item.verificationStatus,
+          })),
+        ),
       };
       await this.repository.markCompleted(task.id, result);
       await this.repository.appendEvent(task.id, 'task_completed', {

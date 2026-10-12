@@ -32,7 +32,7 @@ The response contains:
 - `sources`: source identifiers, final URLs, titles, and retrieval timestamps;
 - `evidence`: a bounded visible-text excerpt linked to its source;
 - `verificationStatus: "unverified"`: the excerpt has been retrieved but has not been independently verified;
-- `findings: []`: no claims are generated until a later extraction and verification milestone;
+- `findings`: exact sentences of at least 20 characters that appear in at least two source excerpts are returned as `supported` with `verificationMethod: "exact-text-match"` and both evidence IDs;
 - `taskId`: the durable research task identifier.
 
 Each source and evidence item is also stored in Supabase tables `research_sources` and `research_evidence`. Lifecycle events include `task_started`, `source_completed`, and `task_completed`.
@@ -45,6 +45,7 @@ Row Level Security is enabled on all four research tables. Serena accesses them 
 - Maximum five sources per request.
 - Research runs synchronously within the API request; a queue is not included yet.
 - Evidence is a bounded visible-text prefix, not a claim or citation-quality passage selection.
+- Exact text agreement is not semantic truth; it is only a reproducible cross-source match.
 - No AI model is allowed to invent findings in this milestone.
 
 ## Verification
