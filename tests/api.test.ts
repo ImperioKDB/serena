@@ -61,10 +61,10 @@ describe('Serena API', () => {
     expect(readPage).not.toHaveBeenCalled();
   });
 
-  it('requires a bearer token when API protection is configured', async () => {
+  it('rejects missing Supabase access tokens when authentication is configured', async () => {
     app = createApp(
       adapterFor(async () => successfulResult),
-      { apiKey: 'test-key' },
+      { authVerifier: async () => null },
     );
 
     const response = await app.inject({
@@ -77,19 +77,110 @@ describe('Serena API', () => {
     expect(response.json().error.code).toBe('UNAUTHORIZED');
   });
 
+  it('rejects an invalid Supabase access token', async () => {
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        authVerifier: async () => null,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/page-reads',
+      headers: { authorization: 'Bearer expired-session' },
+      payload: { target: 'https://example.com/article' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('retains legacy API-key authentication for existing server-to-server clients', async () => {
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      { apiKey: 'legacy-server-key' },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/page-reads',
+      headers: { authorization: 'Bearer legacy-server-key' },
+      payload: { target: 'https://example.com/article' },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('verifies a Supabase bearer token before routing and stores its user as task owner', async () => {
+    const ownerId = '6bffb79d-9f1d-41aa-91b9-75edb31ae70f';
+    const repository = new InMemoryTaskRepository();
+    const authVerifier = vi.fn(async (token: string) =>
+      token === 'valid-session' ? { id: ownerId } : null,
+    );
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        authVerifier,
+        taskRepository: repository,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      headers: { authorization: 'Bearer valid-session' },
+      payload: {
+        request: 'Compare two sources.',
+        sources: ['https://example.com/one'],
+        ownerId: '00000000-0000-0000-0000-000000000000',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(authVerifier).toHaveBeenCalledWith('valid-session');
+    expect(response.json().error.code).toBe('INVALID_REQUEST');
+  });
+
+  it('records the owner ID returned by Supabase Auth', async () => {
+    const ownerId = '6bffb79d-9f1d-41aa-91b9-75edb31ae70f';
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async (target) => ({ ...successfulResult, url: target })),
+      {
+        authVerifier: async () => ({ id: ownerId }),
+        taskRepository: repository,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      headers: { authorization: 'Bearer verified-session' },
+      payload: {
+        request: 'Compare two sources.',
+        sources: ['https://example.com/one'],
+      },
+    });
+    const taskId = response.json().taskId as string;
+
+    expect(response.statusCode).toBe(200);
+    expect(repository.getTaskOwner(taskId)).toBe(ownerId);
+  });
+
   it('rejects over-capacity requests before starting a browser read', async () => {
     const readPage = vi.fn(async () => successfulResult);
     const acquireRequest = vi.fn(async () => 'concurrency_limited' as const);
     const releaseRequest = vi.fn(async () => undefined);
     app = createApp(adapterFor(readPage), {
-      apiKey: 'test-key',
+      authVerifier: async () => ({ id: '6bffb79d-9f1d-41aa-91b9-75edb31ae70f' }),
       requestAdmission: { acquireRequest, releaseRequest },
     });
 
     const response = await app.inject({
       method: 'POST',
       url: '/v1/page-reads',
-      headers: { authorization: 'Bearer test-key' },
+      headers: { authorization: 'Bearer test-session' },
       payload: { target: 'https://example.com/article' },
     });
 

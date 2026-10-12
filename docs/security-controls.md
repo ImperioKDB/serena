@@ -1,6 +1,6 @@
 # Serena security controls: outbound reads and request admission
 
-**Status:** deployed and verified (2026-10-12). Production commit `903ad32` is live and the Supabase migration is applied.
+**Status:** outbound-read and request-admission controls are deployed and verified (2026-10-12). Supabase Google Auth integration is implemented separately; Google OAuth credentials still need to be configured in Supabase.
 
 ## Research and design decision
 
@@ -15,18 +15,18 @@ Serena currently runs its API on Vercel and uses Playwright/Browserbase to read 
 
 ## Intended limits
 
-| Control                                        |          Current target |
-| ---------------------------------------------- | ----------------------: |
-| JSON request body                              |                  64 KiB |
-| Allowed browser request methods                |       GET and HEAD only |
-| Browser network requests per page              |                      80 |
-| Maximum decoded response per resource          |                   2 MiB |
-| Maximum combined page responses                |                   8 MiB |
-| API requests per bearer-token hash             | 20 per 60-second window |
-| Concurrent API requests per bearer-token hash  |                       2 |
-| Admission lease expiry after a killed function |             120 seconds |
+| Control                                                  |          Current target |
+| -------------------------------------------------------- | ----------------------: |
+| JSON request body                                        |                  64 KiB |
+| Allowed browser request methods                          |       GET and HEAD only |
+| Browser network requests per page                        |                      80 |
+| Maximum decoded response per resource                    |                   2 MiB |
+| Maximum combined page responses                          |                   8 MiB |
+| API requests per authenticated-principal hash            | 20 per 60-second window |
+| Concurrent API requests per authenticated-principal hash |                       2 |
+| Admission lease expiry after a killed function           |             120 seconds |
 
-The API guard is fail-closed when its Postgres admission store is unavailable. It releases leases on completed responses; expiry recovers capacity after process termination. Rate state is keyed by an HMAC-derived API-key identifier, not by storing the bearer secret.
+The API guard is fail-closed when its Postgres admission store is unavailable. It releases leases on completed responses; expiry recovers capacity after process termination. Rate state is keyed by a SHA-256 digest of the verified Supabase user UUID for user sessions, or an HMAC-derived identifier for the optional legacy server API key; raw user IDs and bearer secrets are not stored in the admission key table.
 
 ### Live Supabase function checks
 
@@ -49,5 +49,6 @@ Direct tests against the Serena project used unique temporary key hashes and req
 2. The byte budgets cap data buffered and handed to Chromium; accepted `Content-Encoding` formats are decompressed under a second byte cap. An unsupported encoding is rejected.
 3. Only GET/HEAD requests are relayed. That blocks ordinary mutation methods, but HTTP GET endpoints can still have side effects; Serena must never treat arbitrary page actions as approval to perform consequential actions.
 4. Chromium service-worker interception is explicitly bypassed through CDP before navigation because service-worker-fulfilled HTTP requests are not visible to Playwright route handlers.
-5. The rate and concurrency limits are global per configured API bearer token. A future multi-user API will need distinct authenticated principals and per-principal budgets.
-6. The migration is additive. Confirm its presence in the Serena Supabase project before deploying the API code that calls its functions.
+5. The rate and concurrency limits are global per authenticated principal. Dashboard sessions are verified by Supabase Auth, and new tasks store the verified Supabase user UUID as `owner_id`; legacy prototype and server-API-key tasks remain unowned. No task-list/history endpoint is exposed yet. Future read endpoints must filter by `owner_id` and enforce authorization server-side; the current API uses a privileged Postgres connection, so RLS alone does not constrain its SQL.
+6. Google OAuth requires a Google Web OAuth client ID/secret configured in Supabase Auth, plus exact site/redirect allow-list entries. The client secret must remain in Supabase, never in the browser bundle. See [`google-auth-setup.md`](./google-auth-setup.md).
+7. The request-admission and task-owner migrations are additive. Confirm both are present in the Serena Supabase project before deploying API code that uses them.

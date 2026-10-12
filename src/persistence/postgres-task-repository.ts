@@ -27,8 +27,12 @@ export class PostgresTaskRepository implements TaskRepository, RequestAdmissionS
 
   public async createTask(input: CreateTaskInput): Promise<ResearchTaskRecord> {
     const [task] = await this.sql<{ id: string; status: ResearchTaskRecord['status'] }[]>`
-      insert into research_tasks (request_text, input_json)
-      values (${input.requestText}, ${this.sql.json(JSON.parse(JSON.stringify(input.input)))})
+      insert into research_tasks (owner_id, request_text, input_json)
+      values (
+        ${input.ownerId ?? null}::uuid,
+        ${input.requestText},
+        ${this.sql.json(JSON.parse(JSON.stringify(input.input)))}
+      )
       returning id, status
     `;
 

@@ -8,6 +8,7 @@ import type {
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export interface CreateTaskInput {
+  ownerId?: string;
   requestText: string;
   input: Record<string, unknown>;
 }

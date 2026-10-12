@@ -3,7 +3,6 @@ import { useState, type FormEvent, type ReactElement } from 'react';
 export interface ResearchComposerValues {
   request: string;
   sources: string[];
-  apiKey: string;
 }
 
 export function ResearchComposer({
@@ -17,7 +16,6 @@ export function ResearchComposer({
 }): ReactElement {
   const [request, setRequest] = useState('');
   const [sourcesText, setSourcesText] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -39,13 +37,8 @@ export function ResearchComposer({
       setError('Sources must use HTTPS URLs.');
       return;
     }
-    if (!apiKey.trim()) {
-      setError('Enter your Serena API key for this browser session. It is not saved.');
-      return;
-    }
-
     setError(null);
-    onSubmit({ request: request.trim(), sources, apiKey: apiKey.trim() });
+    onSubmit({ request: request.trim(), sources });
   }
 
   return (
@@ -79,20 +72,6 @@ export function ResearchComposer({
           disabled={disabled}
         />
         <small>One HTTPS URL per line, up to five sources.</small>
-      </label>
-
-      <label className="field field--compact">
-        <span>Serena API key</span>
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          placeholder="Used in memory for this session only"
-          autoComplete="off"
-          spellCheck={false}
-          disabled={disabled}
-        />
-        <small>Never stored in localStorage, source code, or the URL.</small>
       </label>
 
       {error ? (

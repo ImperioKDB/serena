@@ -14,6 +14,7 @@ import {
 } from './request-admission-store.js';
 
 interface StoredTask extends ResearchTaskRecord {
+  ownerId?: string;
   requestText: string;
   input: Record<string, unknown>;
   result?: BrowserReadResult;
@@ -37,6 +38,7 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
     const task: StoredTask = {
       id,
       status: 'queued',
+      ...(input.ownerId === undefined ? {} : { ownerId: input.ownerId }),
       requestText: input.requestText,
       input: input.input,
       events: [],
@@ -139,6 +141,10 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
 
   public getTaskStatus(taskId: string): TaskStatus | undefined {
     return this.tasks.get(taskId)?.status;
+  }
+
+  public getTaskOwner(taskId: string): string | undefined {
+    return this.tasks.get(taskId)?.ownerId;
   }
 
   public getSources(taskId: string): ResearchSourceRecord[] {

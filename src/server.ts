@@ -6,11 +6,17 @@ import { PlaywrightBrowserAdapter } from './browser/playwright-browser-adapter.j
 import { InMemoryTaskRepository } from './persistence/in-memory-task-repository.js';
 import { PostgresTaskRepository } from './persistence/postgres-task-repository.js';
 import { OpenAiCompatibleClaimExtractor } from './research/claim-extractor.js';
-import { assertProductionApiKey, assertProductionDatabaseUrl } from './core/runtime-config.js';
+import {
+  assertProductionDatabaseUrl,
+  assertProductionSupabaseAuth,
+} from './core/runtime-config.js';
+import { createSupabaseAuthVerifier } from './api/supabase-auth.js';
 
 const port = Number(process.env.PORT ?? 3000);
-const apiKey = process.env.SERENA_API_KEY;
-assertProductionApiKey(apiKey);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+const legacyApiKey = process.env.SERENA_API_KEY;
+assertProductionSupabaseAuth(supabaseUrl, supabasePublishableKey);
 const corsOrigins = (process.env.SERENA_CORS_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim())
@@ -35,7 +41,10 @@ const claimExtractor =
 const app = createApp(
   browserAdapter,
   {
-    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(legacyApiKey === undefined ? {} : { apiKey: legacyApiKey }),
+    ...(supabaseUrl && supabasePublishableKey
+      ? { authVerifier: createSupabaseAuthVerifier(supabaseUrl, supabasePublishableKey) }
+      : {}),
     ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
     requestAdmission: taskRepository,
     taskRepository,

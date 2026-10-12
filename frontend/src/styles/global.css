@@ -110,6 +110,16 @@ a {
   font-size: 0.75rem;
   font-weight: 620;
 }
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+.topbar__signout {
+  min-height: 2.35rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+}
 .status-dot {
   width: 0.45rem;
   height: 0.45rem;
@@ -180,6 +190,19 @@ h3 {
 }
 .composer-card {
   padding: clamp(1.15rem, 3vw, 2rem);
+}
+.auth-card > p:not(.eyebrow) {
+  max-width: 34rem;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+.auth-card__button {
+  margin-top: 0.6rem;
+}
+.signed-in-note {
+  margin: 0 0 0.8rem;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
 }
 .composer-card__intro {
   padding-bottom: 1.3rem;

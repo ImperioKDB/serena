@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
 import { BrowserReadError } from '../core/result.js';
+import type { AuthVerifier } from './supabase-auth.js';
 import type { RequestAdmissionStore } from '../persistence/request-admission-store.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from '../research/claim-extractor.js';
@@ -31,6 +32,7 @@ const researchRequestSchema = z
 
 export interface AppOptions {
   apiKey?: string;
+  authVerifier?: AuthVerifier;
   corsOrigins?: readonly string[];
   requestAdmission?: RequestAdmissionStore;
   taskRepository?: TaskRepository;
@@ -118,6 +120,7 @@ export function createApp(
     'https://hoppscotch.io',
     'https://www.hoppscotch.io',
     'http://localhost:3000',
+    'http://localhost:5173',
     ...(options.corsOrigins ?? []),
   ].map(normalizeCorsOrigin);
   void app.register(cors, {
@@ -127,18 +130,66 @@ export function createApp(
   });
 
   const activeLeases = new WeakMap<FastifyRequest, string>();
-  const limiterKey = options.apiKey
-    ? createHmac('sha256', options.apiKey).update('serena-request-admission-v1').digest('hex')
-    : undefined;
+  const authenticatedUsers = new WeakMap<FastifyRequest, string>();
+  const requestPrincipals = new WeakMap<FastifyRequest, string>();
 
   app.addHook('onRequest', async (request, reply) => {
     if (request.url === '/health' || request.method === 'OPTIONS') {
       return;
     }
 
-    if (options.apiKey) {
-      const authorization = request.headers.authorization;
-      if (authorization !== `Bearer ${options.apiKey}`) {
+    if (options.authVerifier || options.apiKey) {
+      const match = /^Bearer\s+([^\s]+)$/iu.exec(request.headers.authorization ?? '');
+      const token = match?.[1];
+      if (!token) {
+        await reply
+          .code(401)
+          .send(errorResponse(request.id, 'UNAUTHORIZED', 'A valid sign-in session is required.'));
+        return;
+      }
+      const expectedKey = options.apiKey;
+      const tokenBuffer = Buffer.from(token);
+      const keyBuffer = expectedKey === undefined ? undefined : Buffer.from(expectedKey);
+      const isLegacyApiKey =
+        keyBuffer !== undefined &&
+        tokenBuffer.byteLength === keyBuffer.byteLength &&
+        timingSafeEqual(tokenBuffer, keyBuffer);
+      if (isLegacyApiKey && expectedKey) {
+        requestPrincipals.set(
+          request,
+          createHmac('sha256', expectedKey).update('serena-legacy-api-key-v1').digest('hex'),
+        );
+      } else if (options.authVerifier) {
+        try {
+          const user = await options.authVerifier(token);
+          if (!user) {
+            await reply
+              .code(401)
+              .send(
+                errorResponse(
+                  request.id,
+                  'UNAUTHORIZED',
+                  'The sign-in session is invalid or expired.',
+                ),
+              );
+            return;
+          }
+          authenticatedUsers.set(request, user.id);
+          requestPrincipals.set(request, createHash('sha256').update(user.id).digest('hex'));
+        } catch (error) {
+          request.log.error({ err: error }, 'Supabase Auth verification unavailable');
+          await reply
+            .code(503)
+            .send(
+              errorResponse(
+                request.id,
+                'AUTH_UNAVAILABLE',
+                'Sign-in verification is temporarily unavailable.',
+              ),
+            );
+          return;
+        }
+      } else {
         await reply
           .code(401)
           .send(errorResponse(request.id, 'UNAUTHORIZED', 'A valid bearer token is required.'));
@@ -146,7 +197,8 @@ export function createApp(
       }
     }
 
-    if (!options.apiKey || !limiterKey || !options.requestAdmission) return;
+    const limiterKey = requestPrincipals.get(request);
+    if (!limiterKey || !options.requestAdmission) return;
 
     const leaseId = randomUUID();
     let decision;
@@ -216,6 +268,7 @@ export function createApp(
     try {
       if (options.taskRepository) {
         const task = await options.taskRepository.createTask({
+          ...(authenticatedUsers.has(request) ? { ownerId: authenticatedUsers.get(request)! } : {}),
           requestText: `Read public page: ${parsed.data.target}`,
           input: {
             target: parsed.data.target,
@@ -307,6 +360,7 @@ export function createApp(
       const execution = await service.run({
         request: parsed.data.request,
         sources: parsed.data.sources,
+        ...(authenticatedUsers.has(request) ? { ownerId: authenticatedUsers.get(request)! } : {}),
         ...(parsed.data.timeoutMs === undefined ? {} : { timeoutMs: parsed.data.timeoutMs }),
         ...(parsed.data.allowedDomains === undefined
           ? {}

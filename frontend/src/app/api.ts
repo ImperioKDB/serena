@@ -14,14 +14,14 @@ export class SerenaApiError extends Error {
 
 export async function submitResearch(input: {
   apiUrl: string;
-  apiKey: string;
+  accessToken: string;
   request: string;
   sources: string[];
 }): Promise<ResearchApiResponse> {
   const response = await fetch(`${input.apiUrl.replace(/\/$/u, '')}/v1/research-tasks`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${input.apiKey}`,
+      Authorization: `Bearer ${input.accessToken}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

@@ -11,6 +11,7 @@ const DEFAULT_SOURCE_TIMEOUT_MS = 10_000;
 const MAX_CLAIM_EXTRACTION_DURATION_MS = 15_000;
 
 export interface ResearchServiceInput {
+  ownerId?: string;
   request: string;
   sources: string[];
   timeoutMs?: number;
@@ -28,6 +29,7 @@ export class ResearchService {
     input: ResearchServiceInput,
   ): Promise<{ taskId: string; result: ResearchResult }> {
     const task = await this.repository.createTask({
+      ...(input.ownerId === undefined ? {} : { ownerId: input.ownerId }),
       requestText: input.request,
       input: {
         request: input.request,

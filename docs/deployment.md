@@ -8,25 +8,28 @@
 
 Project-level SSO protection is disabled on the existing API project because the connected Vercel team protection is not available in this deployment workflow. No unrelated account or project security settings should be changed.
 
-## API environment variables
+## Supabase Auth environment variables
 
-Configure sensitive values only in Vercel's encrypted/sensitive environment-variable store:
+The production API validates each Supabase Auth access token against the project Auth service. Configure these values on both Vercel projects:
 
-- `SERENA_API_KEY`: required for all production server startup; the API fails closed if it is blank or missing.
+- API project `serena`: `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
+- Frontend project `serena-frontend`: `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+- The Supabase publishable key is designed for client exposure; never use a service-role/secret key in either app. Keep `DATABASE_URL`, provider credentials, and model secrets in the API project's sensitive variables only.
+- `SERENA_API_KEY`: optional legacy server-to-server bearer credential. It is not used by the dashboard and must never be put in frontend configuration. New user-facing clients should use Supabase Auth.
 - `DATABASE_URL`: Supabase Postgres connection string for project `nmlhcofasxsngmvjjxti`; it is required in production for shared request admission and research persistence. The API fails closed if it is missing.
 - `BROWSERBASE_API_KEY`: enables managed Playwright sessions.
 - `BROWSERBASE_PROJECT_ID`: optional explicit Browserbase project ID; Browserbase may infer it from the API key.
 - `SERENA_CORS_ORIGINS`: optional comma-separated exact HTTPS origins allowed by the API, for example `https://serena-frontend.example.vercel.app`. Do not use `*`, paths, or a broad Vercel wildcard. Add the actual deployed dashboard origin after the frontend project is created, then redeploy the API.
 
-The frontend's `VITE_SERENA_API_URL` is a public API base URL, not a secret. The frontend must never receive `SERENA_API_KEY`, database credentials, or provider secrets. Users enter the bearer key in the dashboard for its request; the app does not persist it to local storage.
+The frontend's `VITE_SERENA_API_URL` is a public API base URL, not a secret. The frontend obtains a Google-authenticated Supabase session and sends its access token as a bearer token; the API verifies it with Supabase before processing the request. The SDK uses PKCE and `sessionStorage` (rather than long-lived `localStorage`) for this browser prototype. Google client secrets belong only in Supabase Auth provider settings, never in Serena or Vercel frontend variables. Existing server-to-server callers using `SERENA_API_KEY` remain supported, but tasks created through that legacy path have no verified user owner. Follow [Google sign-in setup](./google-auth-setup.md) to finish provider configuration.
 
 ## Browser and request budgets
 
 The browser rejects non-HTTPS targets by default (with a loopback-only HTTP exception for local fixtures), credentials in URLs, non-default HTTPS ports, private/special-purpose IP literals and DNS answers, and hosts outside an optional domain allowlist. For each HTTP request, Serena resolves DNS once, rejects the target if any answer is private/reserved, then opens a direct socket to a vetted answer while preserving the requested Host header and TLS server name. Redirect hops use this same guarded client and are limited to five. In-page requests also pass through the same pinned client; no automatic redirect is followed. Chromium service-worker network interception is bypassed so worker-fulfilled requests remain visible to Playwright routes.
 
-Inbound JSON is limited to 64 KiB. The browser only relays GET/HEAD, blocks images/media/fonts, limits a page to 80 requests, allows up to 2 MiB decoded per resource and 8 MiB total, and caps extracted text at 50,000 characters. A research task has a 65-second orchestration budget with at most 15 seconds for claim extraction. Production API calls are limited per API-key hash to 20 successful admissions per 60-second fixed window and two concurrent leases; leases expire after 120 seconds if a function is terminated.
+Inbound JSON is limited to 64 KiB. The browser only relays GET/HEAD, blocks images/media/fonts, limits a page to 80 requests, allows up to 2 MiB decoded per resource and 8 MiB total, and caps extracted text at 50,000 characters. A research task has a 65-second orchestration budget with at most 15 seconds for claim extraction. Production API calls are limited per authenticated-user hash to 20 successful admissions per 60-second fixed window and two concurrent leases; leases expire after 120 seconds if a function is terminated.
 
-Before deploying the API code, apply migration `20261012204800_request_admission_limits.sql` to the Serena Supabase project. The deploy must include `DATABASE_URL`; the API fails closed if the admission functions cannot be reached. See [security controls](./security-controls.md) for design rationale and provider research.
+Before deploying API code, apply migrations `20261012204800_request_admission_limits.sql` and `20261012222000_research_task_owner.sql` to the Serena Supabase project. The latter attaches new tasks to the verified Auth user; legacy tasks remain unowned. The deploy must include `DATABASE_URL` and Supabase Auth configuration; the API fails closed if required auth or admission services cannot be reached. See [security controls](./security-controls.md) for design rationale and provider research.
 
 **Important residual risk:** this application-layer guard protects only HTTP(S) requests routed through Serena’s guarded browser adapters. It does **not** inspect or block WebSocket (`ws:`/`wss:`), WebRTC/ICE/STUN or other UDP, QUIC/WebTransport, direct browser DNS, or other non-HTTP network paths; this is not a general browser egress firewall. Any future HTTP client must use the same pinned helper. Handling arbitrary untrusted pages safely requires a provider/network egress policy covering all protocols, or disabling unsupported protocols at that layer. Continue to use least-privilege credentials, isolate sessions, and require explicit human approval before consequential actions.
 
