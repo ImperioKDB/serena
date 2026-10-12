@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import { z } from 'zod';
 
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
@@ -54,6 +55,12 @@ export function createApp(
   options: AppOptions = {},
   app: FastifyInstance = Fastify({ logger: true }),
 ): FastifyInstance {
+  void app.register(cors, {
+    origin: ['https://hoppscotch.io', 'https://www.hoppscotch.io', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  });
+
   app.addHook('onRequest', async (request, reply) => {
     if (!options.apiKey || request.url === '/health') {
       return;
