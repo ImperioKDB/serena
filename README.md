@@ -34,6 +34,12 @@ The controlled research contract and its limitations are in [`docs/fourth-milest
 
 AI-assisted claims are optional and evidence-grounded. Without an explicitly configured server-side model provider, Serena uses the deterministic matcher and does not call an AI model.
 
+## Frontend dashboard
+
+The first phone-first research dashboard lives in [`frontend/`](frontend/). It submits research requests only to the existing API, presents findings alongside their evidence, and shows cautious source-quality signals without treating domain names as proof of accuracy. The browser never receives Groq, Supabase service-role, database, or Browserbase credentials. The API key is entered for the current page session and is held in React memory only.
+
+From the repository root, run `pnpm install`, then `pnpm --filter @serena/frontend dev --host 0.0.0.0 --port 3000 --strictPort`. Frontend checks are `pnpm --filter @serena/frontend typecheck` and `pnpm --filter @serena/frontend build`.
+
 ## Development workflow
 
 1. Work from the managed development environment.
