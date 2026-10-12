@@ -5,6 +5,7 @@ import { BrowserReadError, type BrowserReadResult } from '../core/result.js';
 import type { BrowserAdapter, BrowserReadOptions } from './browser-adapter.js';
 import { installRequestGuard } from './request-guard.js';
 import { resolveSafeRedirects } from './redirect-resolver.js';
+import { bypassServiceWorkerNetwork } from './service-worker-guard.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_EXTRACTED_TEXT_CHARS = 50_000;
@@ -24,6 +25,7 @@ export class PlaywrightBrowserAdapter implements BrowserAdapter {
       const context = await browser.newContext();
       const requestGuard = await installRequestGuard(context, options);
       const page = await context.newPage();
+      await bypassServiceWorkerNetwork(context, page);
       page.setDefaultNavigationTimeout(timeoutMs);
       page.setDefaultTimeout(timeoutMs);
 

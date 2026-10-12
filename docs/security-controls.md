@@ -44,5 +44,6 @@ The API guard is fail-closed when its Postgres admission store is unavailable. I
 1. This is an **application-layer destination guard**, not a provider-level firewall. Any future outbound HTTP client added outside the guarded browser adapter must use an equivalent pinned-destination helper or a separately enforced egress proxy.
 2. The byte budgets cap data buffered and handed to Chromium; accepted `Content-Encoding` formats are decompressed under a second byte cap. An unsupported encoding is rejected.
 3. Only GET/HEAD requests are relayed. That blocks ordinary mutation methods, but HTTP GET endpoints can still have side effects; Serena must never treat arbitrary page actions as approval to perform consequential actions.
-4. The rate and concurrency limits are global per configured API bearer token. A future multi-user API will need distinct authenticated principals and per-principal budgets.
-5. The migration is additive. Confirm its presence in the Serena Supabase project before deploying the API code that calls its functions.
+4. Chromium service-worker interception is explicitly bypassed through CDP before navigation because service-worker-fulfilled requests are not visible to Playwright route handlers.
+5. The rate and concurrency limits are global per configured API bearer token. A future multi-user API will need distinct authenticated principals and per-principal budgets.
+6. The migration is additive. Confirm its presence in the Serena Supabase project before deploying the API code that calls its functions.

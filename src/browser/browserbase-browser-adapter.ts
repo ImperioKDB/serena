@@ -6,6 +6,7 @@ import { BrowserReadError, type BrowserReadResult } from '../core/result.js';
 import type { BrowserAdapter, BrowserReadOptions } from './browser-adapter.js';
 import { installRequestGuard } from './request-guard.js';
 import { resolveSafeRedirects } from './redirect-resolver.js';
+import { bypassServiceWorkerNetwork } from './service-worker-guard.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_SESSION_TIMEOUT_SECONDS = 21_600;
@@ -44,6 +45,7 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
       const context = browser.contexts()[0] ?? (await browser.newContext());
       const requestGuard = await installRequestGuard(context, options);
       const page = context.pages()[0] ?? (await context.newPage());
+      await bypassServiceWorkerNetwork(context, page);
       page.setDefaultNavigationTimeout(timeoutMs);
       page.setDefaultTimeout(timeoutMs);
 
