@@ -30,6 +30,8 @@ Persistence configuration and schema details are in [`docs/third-milestone.md`](
 
 The controlled research contract and its limitations are in [`docs/fourth-milestone.md`](docs/fourth-milestone.md).
 
+AI-assisted claims are optional and evidence-grounded. Without an explicitly configured server-side model provider, Serena uses the deterministic matcher and does not call an AI model.
+
 ## Development workflow
 
 1. Work from the managed development environment.

@@ -4,6 +4,7 @@ import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { createApp } from '../src/api/app.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
 import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
+import type { ClaimExtractor } from '../src/research/claim-extractor.js';
 
 const successfulResult: BrowserReadResult = {
   url: 'https://example.com/article',
@@ -158,6 +159,76 @@ describe('Serena API', () => {
       verificationMethod: 'exact-text-match',
     });
     expect(finding.evidenceIds).toHaveLength(2);
+  });
+
+  it('uses an injected evidence-grounded claim extractor', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = {
+      extract: async ({ evidence }) => [
+        {
+          claim: 'The sources contain a cautious extracted claim.',
+          status: 'proposed',
+          verificationMethod: 'llm-evidence-grounded',
+          uncertainty: 'The model proposed this claim; human review is still appropriate.',
+          evidenceIds: [evidence[0]!.id],
+        },
+      ],
+    };
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        taskRepository: repository,
+        claimExtractor,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Extract a cautious claim.',
+        sources: ['https://example.com/article'],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.findings[0]).toMatchObject({
+      status: 'proposed',
+      verificationMethod: 'llm-evidence-grounded',
+    });
+  });
+
+  it('falls back to deterministic findings when the claim extractor fails', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = {
+      extract: async () => {
+        throw new Error('model unavailable');
+      },
+    };
+    app = createApp(
+      adapterFor(async (target) => ({
+        ...successfulResult,
+        url: target,
+        finalUrl: target,
+        text: 'This exact shared statement is long enough for matching.',
+      })),
+      {
+        taskRepository: repository,
+        claimExtractor,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Fallback safely.',
+        sources: ['https://example.com/one', 'https://example.com/two'],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.findings[0].verificationMethod).toBe('exact-text-match');
   });
 
   it('rejects research requests that exceed the source budget', async () => {

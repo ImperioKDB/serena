@@ -1,5 +1,6 @@
 import type { BrowserAdapter, BrowserReadOptions } from '../browser/browser-adapter.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
+import type { ClaimExtractor } from './claim-extractor.js';
 import { extractCrossSourceFindings } from './finding-extractor.js';
 import type { ResearchResult } from './types.js';
 
@@ -16,6 +17,7 @@ export class ResearchService {
   public constructor(
     private readonly adapter: BrowserAdapter,
     private readonly repository: TaskRepository,
+    private readonly claimExtractor?: ClaimExtractor,
   ) {}
 
   public async run(
@@ -72,21 +74,39 @@ export class ResearchService {
         });
       }
 
+      const evidenceRecords = evidence.map((item) => ({
+        id: item.id,
+        taskId: task.id,
+        sourceId: item.sourceId,
+        excerpt: item.excerpt,
+        locator: item.locator,
+        extractionMethod: 'visible-text-prefix' as const,
+        verificationStatus: item.verificationStatus,
+      }));
+      let findings = extractCrossSourceFindings(evidenceRecords);
+      if (this.claimExtractor) {
+        try {
+          findings = await this.claimExtractor.extract({
+            request: input.request,
+            evidence: evidenceRecords,
+          });
+          await this.repository.appendEvent(task.id, 'claims_extracted', {
+            findingCount: findings.length,
+            method: 'llm-evidence-grounded',
+          });
+        } catch (error) {
+          await this.repository.appendEvent(task.id, 'claims_extraction_fallback', {
+            method: 'exact-text-match',
+            errorType: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+          });
+        }
+      }
+
       const result: ResearchResult = {
         request: input.request,
         sources: sourceResults,
         evidence,
-        findings: extractCrossSourceFindings(
-          evidence.map((item) => ({
-            id: item.id,
-            taskId: task.id,
-            sourceId: item.sourceId,
-            excerpt: item.excerpt,
-            locator: item.locator,
-            extractionMethod: 'visible-text-prefix' as const,
-            verificationStatus: item.verificationStatus,
-          })),
-        ),
+        findings,
       };
       await this.repository.markCompleted(task.id, result);
       await this.repository.appendEvent(task.id, 'task_completed', {

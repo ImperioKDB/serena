@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
 import { BrowserReadError } from '../core/result.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
+import type { ClaimExtractor } from '../research/claim-extractor.js';
 import { ResearchService } from '../research/research-service.js';
 
 const pageReadRequestSchema = z
@@ -28,6 +29,7 @@ const researchRequestSchema = z
 export interface AppOptions {
   apiKey?: string;
   taskRepository?: TaskRepository;
+  claimExtractor?: ClaimExtractor;
 }
 
 function errorResponse(requestId: string, code: string, message: string) {
@@ -192,7 +194,7 @@ export function createApp(
     }
 
     try {
-      const service = new ResearchService(adapter, options.taskRepository);
+      const service = new ResearchService(adapter, options.taskRepository, options.claimExtractor);
       const execution = await service.run({
         request: parsed.data.request,
         sources: parsed.data.sources,

@@ -39,6 +39,22 @@ Each source and evidence item is also stored in Supabase tables `research_source
 
 Row Level Security is enabled on all four research tables. Serena accesses them through its server-side database connection; no direct anon-client policies are configured.
 
+## Optional AI claim extraction
+
+The API can use an OpenAI-compatible chat-completions provider when all of these server-side variables are configured:
+
+```text
+LLM_API_URL=https://provider.example/v1
+LLM_API_KEY=<server-side secret>
+LLM_MODEL=gpt-5-mini
+```
+
+The selected model must return strict JSON containing claims, uncertainty, and evidence IDs. Serena rejects malformed claims and removes any finding that cites an evidence ID not present in the current task. Webpage excerpts are placed in explicit untrusted-data delimiters, and the prompt tells the model never to follow instructions contained in those excerpts.
+
+If the model is unavailable, malformed, or returns invalid output, Serena records a fallback event and uses the deterministic exact-text matcher instead. The research request still completes without exposing model errors to the caller.
+
+The current implementation does not automatically configure a paid model provider. Do not put a personal provider key in GitHub, source code, or a Colab notebook. Add it only as an encrypted Vercel environment variable after choosing a provider and understanding its pricing.
+
 ## Deliberate limitations
 
 - URLs must be supplied by the caller; discovery/search is not included yet.

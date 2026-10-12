@@ -18,6 +18,14 @@ export interface ResearchEvidenceRecord {
   verificationStatus: EvidenceVerificationStatus;
 }
 
+export interface ResearchFinding {
+  claim: string;
+  status: 'proposed' | 'supported';
+  verificationMethod: 'exact-text-match' | 'llm-evidence-grounded';
+  uncertainty?: string;
+  evidenceIds: string[];
+}
+
 export interface ResearchResult {
   request: string;
   sources: Array<{
@@ -34,10 +42,5 @@ export interface ResearchResult {
     locator: string;
     verificationStatus: EvidenceVerificationStatus;
   }>;
-  findings: Array<{
-    claim: string;
-    status: 'supported';
-    verificationMethod: 'exact-text-match';
-    evidenceIds: string[];
-  }>;
+  findings: ResearchFinding[];
 }

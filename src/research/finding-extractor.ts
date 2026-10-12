@@ -1,11 +1,4 @@
-import type { ResearchEvidenceRecord } from './types.js';
-
-export interface FindingCandidate {
-  claim: string;
-  status: 'supported';
-  verificationMethod: 'exact-text-match';
-  evidenceIds: string[];
-}
+import type { ResearchEvidenceRecord, ResearchFinding } from './types.js';
 
 function sentences(text: string): string[] {
   return text
@@ -18,7 +11,7 @@ function normalize(sentence: string): string {
   return sentence.replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
 }
 
-export function extractCrossSourceFindings(evidence: ResearchEvidenceRecord[]): FindingCandidate[] {
+export function extractCrossSourceFindings(evidence: ResearchEvidenceRecord[]): ResearchFinding[] {
   const matches = new Map<string, { claim: string; evidenceIds: Set<string> }>();
 
   for (const item of evidence) {
