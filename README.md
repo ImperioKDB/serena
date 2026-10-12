@@ -22,7 +22,9 @@ Authentication, AI planning, crawling, queues, memory search, and production sch
 
 - `GET /health` checks that the service is running.
 - `POST /v1/page-reads` reads one explicitly supplied public page and returns structured page data.
-- `POST /v1/research-tasks` reads 1–5 supplied public URLs sequentially, returns source-linked evidence, and reports only exact cross-source sentence matches as provisional findings.
+- `POST /v1/research-tasks` reads 1–5 supplied public URLs sequentially, returns source-linked evidence, reports cautious domain/content-quality metadata, and marks AI findings for review unless they pass deterministic exact-match verification.
+
+Research source quality is intentionally conservative. A source can expose signals such as `government-domain`, `education-domain`, `organization-domain`, or `commercial-domain`, but these are not proof that the content is accurate. Each source also includes a normalized SHA-256 content hash so exact duplicate pages can be detected. AI-generated findings that do not match the deterministic cross-source verifier are returned as `proposed` with `reviewRequired: true`.
 
 Set `SERENA_API_KEY` in a deployment environment to require `Authorization: Bearer <key>` for the page-read endpoint. See [`docs/second-milestone.md`](docs/second-milestone.md) for the request contract and limitations.
 

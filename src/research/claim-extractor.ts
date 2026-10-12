@@ -8,6 +8,7 @@ export const claimFindingSchema = z.object({
   verificationMethod: z.literal('llm-evidence-grounded'),
   uncertainty: z.string().trim().min(1).max(500),
   evidenceIds: z.array(z.string().min(1)).min(1).max(10),
+  reviewRequired: z.boolean().optional(),
 });
 
 export const claimExtractionResponseSchema = z.object({
@@ -97,6 +98,7 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
                         minItems: 1,
                         maxItems: 10,
                       },
+                      reviewRequired: { type: 'boolean' },
                     },
                     required: [
                       'claim',
@@ -104,6 +106,7 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
                       'verificationMethod',
                       'uncertainty',
                       'evidenceIds',
+                      'reviewRequired',
                     ],
                     additionalProperties: false,
                   },

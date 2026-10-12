@@ -2,6 +2,7 @@ import type { BrowserAdapter, BrowserReadOptions } from '../browser/browser-adap
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from './claim-extractor.js';
 import { extractCrossSourceFindings } from './finding-extractor.js';
+import { assessSourceQuality } from './source-quality.js';
 import type { ResearchResult } from './types.js';
 
 const MAX_EVIDENCE_CHARS = 500;
@@ -38,6 +39,7 @@ export class ResearchService {
 
     const sourceResults: ResearchResult['sources'] = [];
     const evidence: ResearchResult['evidence'] = [];
+    const sourceSnapshots: Array<{ id: string; hash: string }> = [];
     const readOptions: BrowserReadOptions = {
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       ...(input.allowedDomains === undefined ? {} : { allowedDomains: input.allowedDomains }),
@@ -47,6 +49,8 @@ export class ResearchService {
       for (const sourceUrl of input.sources) {
         const page = await this.adapter.readPage(sourceUrl, readOptions);
         const source = await this.repository.recordSource(task.id, page);
+        const quality = assessSourceQuality(page, source.id, sourceSnapshots);
+        sourceSnapshots.push({ id: source.id, hash: quality.contentHash });
         const evidenceRecord = await this.repository.recordEvidence(task.id, source.id, {
           excerpt: page.text.slice(0, MAX_EVIDENCE_CHARS),
           locator: 'body visible-text prefix',
@@ -60,6 +64,7 @@ export class ResearchService {
           finalUrl: page.finalUrl,
           title: page.title,
           retrievedAt: page.retrievedAt,
+          quality,
         });
         evidence.push({
           id: evidenceRecord.id,
@@ -86,9 +91,24 @@ export class ResearchService {
       let findings = extractCrossSourceFindings(evidenceRecords);
       if (this.claimExtractor) {
         try {
-          findings = await this.claimExtractor.extract({
+          const extractedFindings = await this.claimExtractor.extract({
             request: input.request,
             evidence: evidenceRecords,
+          });
+          findings = extractedFindings.map(({ reviewRequired, ...finding }) =>
+            reviewRequired === undefined ? finding : { ...finding, reviewRequired },
+          );
+          const exactFindings = new Map(
+            extractCrossSourceFindings(evidenceRecords).map((finding) => [
+              finding.claim.toLocaleLowerCase(),
+              finding,
+            ]),
+          );
+          findings = findings.map((finding) => {
+            const exact = exactFindings.get(finding.claim.toLocaleLowerCase());
+            return exact === undefined
+              ? { ...finding, status: 'proposed' as const, reviewRequired: true }
+              : exact;
           });
           await this.repository.appendEvent(task.id, 'claims_extracted', {
             findingCount: findings.length,

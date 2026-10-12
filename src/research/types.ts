@@ -1,4 +1,5 @@
 import type { BrowserReadResult } from '../core/result.js';
+import type { SourceQualityMetadata } from './source-quality.js';
 
 export type EvidenceVerificationStatus = 'unverified' | 'supported' | 'disputed';
 
@@ -24,6 +25,7 @@ export interface ResearchFinding {
   verificationMethod: 'exact-text-match' | 'llm-evidence-grounded';
   uncertainty?: string;
   evidenceIds: string[];
+  reviewRequired?: boolean;
 }
 
 export interface ResearchResult {
@@ -34,6 +36,7 @@ export interface ResearchResult {
     finalUrl: string;
     title: string;
     retrievedAt: string;
+    quality: SourceQualityMetadata;
   }>;
   evidence: Array<{
     id: string;
