@@ -99,6 +99,63 @@ describe('Serena API', () => {
     expect(repository.getTaskStatus(taskId)).toBe('completed');
   });
 
+  it('runs a controlled multi-source research task and records evidence', async () => {
+    const repository = new InMemoryTaskRepository();
+    const readPage = async (target: string) => ({
+      ...successfulResult,
+      url: target,
+      finalUrl: target,
+      text: `Evidence from ${target}`,
+    });
+    app = createApp(adapterFor(readPage), { taskRepository: repository });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Compare two sources.',
+        sources: ['https://example.com/one', 'https://example.com/two'],
+      },
+    });
+
+    const body = response.json();
+    expect(response.statusCode).toBe(200);
+    expect(body.taskId).toMatch(/^task_/);
+    expect(body.data.sources).toHaveLength(2);
+    expect(body.data.evidence).toHaveLength(2);
+    expect(body.data.findings).toEqual([]);
+    expect(repository.getTaskStatus(body.taskId)).toBe('completed');
+    expect(repository.getSources(body.taskId)).toHaveLength(2);
+    expect(repository.getEvidence(body.taskId)).toHaveLength(2);
+  });
+
+  it('rejects research requests that exceed the source budget', async () => {
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      { taskRepository: repository },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Read too many sources.',
+        sources: [
+          'https://example.com/1',
+          'https://example.com/2',
+          'https://example.com/3',
+          'https://example.com/4',
+          'https://example.com/5',
+          'https://example.com/6',
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_REQUEST');
+  });
+
   it('maps browser errors without leaking internal details', async () => {
     const readPage = async () => {
       throw new BrowserReadError(
