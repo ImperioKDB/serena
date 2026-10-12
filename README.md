@@ -22,10 +22,13 @@ Authentication, AI planning, crawling, queues, memory search, and production sch
 
 - `GET /health` checks that the service is running.
 - `POST /v1/page-reads` reads one explicitly supplied public page and returns structured page data.
+- `POST /v1/research-tasks` reads 1–5 supplied public URLs sequentially and returns source-linked evidence.
 
 Set `SERENA_API_KEY` in a deployment environment to require `Authorization: Bearer <key>` for the page-read endpoint. See [`docs/second-milestone.md`](docs/second-milestone.md) for the request contract and limitations.
 
 Persistence configuration and schema details are in [`docs/third-milestone.md`](docs/third-milestone.md).
+
+The controlled research contract and its limitations are in [`docs/fourth-milestone.md`](docs/fourth-milestone.md).
 
 ## Development workflow
 

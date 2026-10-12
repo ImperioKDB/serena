@@ -1,7 +1,13 @@
 import postgres from 'postgres';
 
 import type { BrowserReadResult } from '../core/result.js';
-import type { CreateTaskInput, ResearchTaskRecord, TaskRepository } from './task-repository.js';
+import type { ResearchEvidenceRecord, ResearchSourceRecord } from '../research/types.js';
+import type {
+  CreateEvidenceInput,
+  CreateTaskInput,
+  ResearchTaskRecord,
+  TaskRepository,
+} from './task-repository.js';
 
 export class PostgresTaskRepository implements TaskRepository {
   private readonly sql: ReturnType<typeof postgres>;
@@ -28,6 +34,64 @@ export class PostgresTaskRepository implements TaskRepository {
     return task;
   }
 
+  public async recordSource(
+    taskId: string,
+    result: BrowserReadResult,
+  ): Promise<ResearchSourceRecord> {
+    const [source] = await this.sql<ResearchSourceRecord[]>`
+      insert into research_sources (task_id, url, final_url, title, retrieved_at, result_json)
+      values (
+        ${taskId},
+        ${result.url},
+        ${result.finalUrl},
+        ${result.title},
+        ${result.retrievedAt},
+        ${this.sql.json(JSON.parse(JSON.stringify(result)))}
+      )
+      returning id, task_id as "taskId", result_json as result
+    `;
+
+    if (!source) {
+      throw new Error('The database did not return the created source.');
+    }
+
+    return { ...source, result: source.result as unknown as BrowserReadResult };
+  }
+
+  public async recordEvidence(
+    taskId: string,
+    sourceId: string,
+    input: CreateEvidenceInput,
+  ): Promise<ResearchEvidenceRecord> {
+    const [evidence] = await this.sql<ResearchEvidenceRecord[]>`
+      insert into research_evidence (
+        task_id, source_id, excerpt, locator, extraction_method, verification_status
+      )
+      values (
+        ${taskId},
+        ${sourceId},
+        ${input.excerpt},
+        ${input.locator},
+        ${input.extractionMethod},
+        ${input.verificationStatus}
+      )
+      returning
+        id,
+        task_id as "taskId",
+        source_id as "sourceId",
+        excerpt,
+        locator,
+        extraction_method as "extractionMethod",
+        verification_status as "verificationStatus"
+    `;
+
+    if (!evidence) {
+      throw new Error('The database did not return the created evidence.');
+    }
+
+    return evidence;
+  }
+
   public async appendEvent(
     taskId: string,
     eventType: string,
@@ -52,7 +116,7 @@ export class PostgresTaskRepository implements TaskRepository {
     }
   }
 
-  public async markCompleted(taskId: string, result: BrowserReadResult): Promise<void> {
+  public async markCompleted(taskId: string, result: unknown): Promise<void> {
     await this.sql`
       update research_tasks
       set status = 'completed', result_json = ${this.sql.json(JSON.parse(JSON.stringify(result)))}, finished_at = now()

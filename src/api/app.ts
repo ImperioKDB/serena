@@ -5,12 +5,23 @@ import { z } from 'zod';
 import type { BrowserAdapter } from '../browser/browser-adapter.js';
 import { BrowserReadError } from '../core/result.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
+import { ResearchService } from '../research/research-service.js';
 
 const pageReadRequestSchema = z
   .object({
     target: z.string().url(),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
     allowedDomains: z.array(z.string().min(1)).max(20).optional(),
+  })
+  .strict();
+
+const researchRequestSchema = z
+  .object({
+    request: z.string().trim().min(1).max(2_000),
+    sources: z.array(z.string().url()).min(1).max(5),
+    timeoutMs: z.number().int().min(100).max(30_000).optional(),
+    allowedDomains: z.array(z.string().min(1)).max(20).optional(),
+    requiresApproval: z.literal(false).optional(),
   })
   .strict();
 
@@ -148,6 +159,62 @@ export function createApp(
         });
       }
       request.log.error({ err: error }, 'Unexpected page-read failure');
+      return reply
+        .code(500)
+        .send(errorResponse(request.id, 'INTERNAL_ERROR', 'An unexpected error occurred.'));
+    }
+  });
+
+  app.post('/v1/research-tasks', async (request, reply) => {
+    const parsed = researchRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(
+          errorResponse(
+            request.id,
+            'INVALID_REQUEST',
+            'Request body does not match the research schema.',
+          ),
+        );
+    }
+
+    if (!options.taskRepository) {
+      return reply
+        .code(503)
+        .send(
+          errorResponse(
+            request.id,
+            'PERSISTENCE_UNAVAILABLE',
+            'Research persistence is not configured.',
+          ),
+        );
+    }
+
+    try {
+      const service = new ResearchService(adapter, options.taskRepository);
+      const execution = await service.run({
+        request: parsed.data.request,
+        sources: parsed.data.sources,
+        ...(parsed.data.timeoutMs === undefined ? {} : { timeoutMs: parsed.data.timeoutMs }),
+        ...(parsed.data.allowedDomains === undefined
+          ? {}
+          : { allowedDomains: parsed.data.allowedDomains }),
+      });
+      return reply.code(200).send({
+        data: execution.result,
+        requestId: request.id,
+        taskId: execution.taskId,
+      });
+    } catch (error) {
+      if (error instanceof BrowserReadError) {
+        const mapped = mapBrowserError(error);
+        return reply
+          .code(mapped.statusCode)
+          .send(errorResponse(request.id, mapped.code, mapped.message));
+      }
+
+      request.log.error({ err: error }, 'Unexpected research failure');
       return reply
         .code(500)
         .send(errorResponse(request.id, 'INTERNAL_ERROR', 'An unexpected error occurred.'));
