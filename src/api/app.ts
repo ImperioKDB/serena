@@ -10,6 +10,7 @@ import type { AuthVerifier } from './supabase-auth.js';
 import type { RequestAdmissionStore } from '../persistence/request-admission-store.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from '../research/claim-extractor.js';
+import type { SearchProvider } from '../search/search-provider.js';
 import { ResearchService } from '../research/research-service.js';
 
 const pageReadRequestSchema = z
@@ -23,12 +24,19 @@ const pageReadRequestSchema = z
 const researchRequestSchema = z
   .object({
     request: z.string().trim().min(1).max(2_000),
-    sources: z.array(z.string().url()).min(1).max(5),
+    sources: z.array(z.string().url()).min(1).max(5).optional(),
+    sourceMode: z.enum(['provided', 'discover']).optional(),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
     allowedDomains: z.array(z.string().min(1)).max(20).optional(),
     requiresApproval: z.literal(false).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      (value.sourceMode === 'discover' && value.sources === undefined) ||
+      (value.sourceMode !== 'discover' && value.sources !== undefined),
+    { message: 'Provide sources or choose discovery mode, but not both.' },
+  );
 
 export interface AppOptions {
   apiKey?: string;
@@ -37,6 +45,7 @@ export interface AppOptions {
   requestAdmission?: RequestAdmissionStore;
   taskRepository?: TaskRepository;
   claimExtractor?: ClaimExtractor;
+  searchProvider?: SearchProvider;
 }
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -356,10 +365,27 @@ export function createApp(
     }
 
     try {
-      const service = new ResearchService(adapter, options.taskRepository, options.claimExtractor);
+      if (parsed.data.sourceMode === 'discover' && !options.searchProvider) {
+        return reply
+          .code(503)
+          .send(
+            errorResponse(
+              request.id,
+              'SEARCH_UNAVAILABLE',
+              'Automatic search is not configured yet. Add a server-side search provider key or use public URLs you already know.',
+            ),
+          );
+      }
+      const service = new ResearchService(
+        adapter,
+        options.taskRepository,
+        options.claimExtractor,
+        options.searchProvider,
+      );
       const execution = await service.run({
         request: parsed.data.request,
-        sources: parsed.data.sources,
+        ...(parsed.data.sources === undefined ? {} : { sources: parsed.data.sources }),
+        ...(parsed.data.sourceMode === undefined ? {} : { sourceMode: parsed.data.sourceMode }),
         ...(authenticatedUsers.has(request) ? { ownerId: authenticatedUsers.get(request)! } : {}),
         ...(parsed.data.timeoutMs === undefined ? {} : { timeoutMs: parsed.data.timeoutMs }),
         ...(parsed.data.allowedDomains === undefined

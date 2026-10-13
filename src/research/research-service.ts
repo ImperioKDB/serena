@@ -1,9 +1,11 @@
 import type { BrowserAdapter, BrowserReadOptions } from '../browser/browser-adapter.js';
+import { BrowserReadError } from '../core/result.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from './claim-extractor.js';
 import { extractCrossSourceFindings } from './finding-extractor.js';
 import { assessSourceQuality } from './source-quality.js';
 import type { ResearchResult } from './types.js';
+import type { SearchProvider } from '../search/search-provider.js';
 
 const MAX_EVIDENCE_CHARS = 500;
 const MAX_RESEARCH_DURATION_MS = 65_000;
@@ -13,7 +15,8 @@ const MAX_CLAIM_EXTRACTION_DURATION_MS = 15_000;
 export interface ResearchServiceInput {
   ownerId?: string;
   request: string;
-  sources: string[];
+  sources?: string[];
+  sourceMode?: 'provided' | 'discover';
   timeoutMs?: number;
   allowedDomains?: string[];
 }
@@ -23,6 +26,7 @@ export class ResearchService {
     private readonly adapter: BrowserAdapter,
     private readonly repository: TaskRepository,
     private readonly claimExtractor?: ClaimExtractor,
+    private readonly searchProvider?: SearchProvider,
   ) {}
 
   public async run(
@@ -33,13 +37,15 @@ export class ResearchService {
       requestText: input.request,
       input: {
         request: input.request,
-        sources: input.sources,
+        sourceMode: input.sourceMode ?? 'provided',
+        sources: input.sources ?? [],
         ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
         ...(input.allowedDomains === undefined ? {} : { allowedDomains: input.allowedDomains }),
       },
     });
     await this.repository.appendEvent(task.id, 'task_started', {
-      sourceCount: input.sources.length,
+      sourceMode: input.sourceMode ?? 'provided',
+      sourceCount: input.sources?.length ?? 0,
     });
     const taskStartedAt = performance.now();
 
@@ -47,13 +53,28 @@ export class ResearchService {
     const evidence: ResearchResult['evidence'] = [];
     const sourceSnapshots: Array<{ id: string; hash: string }> = [];
     let securityChallengeSourceCount = 0;
+    let unreadableSourceCount = 0;
     const readOptions: BrowserReadOptions = {
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       ...(input.allowedDomains === undefined ? {} : { allowedDomains: input.allowedDomains }),
     };
 
     try {
-      for (const sourceUrl of input.sources) {
+      let sourceUrls = input.sources ?? [];
+      let discovery: ResearchResult['discovery'] | undefined;
+      if ((input.sourceMode ?? 'provided') === 'discover') {
+        if (!this.searchProvider) throw new Error('Automatic search is not configured.');
+        const candidates = await this.searchProvider.search(input.request, { maxResults: 10 });
+        sourceUrls = candidates.slice(0, 5).map((candidate) => candidate.url);
+        discovery = { provider: 'tavily', candidateCount: candidates.length, attemptedCount: 0 };
+        await this.repository.appendEvent(task.id, 'search_completed', {
+          provider: 'tavily',
+          candidateCount: candidates.length,
+          candidates: candidates.slice(0, 10).map(({ url, title, rank }) => ({ url, title, rank })),
+        });
+      }
+
+      for (const sourceUrl of sourceUrls) {
         const remainingMs = Math.floor(
           MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
         );
@@ -61,10 +82,28 @@ export class ResearchService {
           throw new Error('Research task exceeded its total time budget.');
         }
         const pageTimeoutMs = Math.min(input.timeoutMs ?? DEFAULT_SOURCE_TIMEOUT_MS, remainingMs);
-        const page = await this.adapter.readPage(sourceUrl, {
-          ...readOptions,
-          timeoutMs: pageTimeoutMs,
-        });
+        if (discovery) discovery.attemptedCount += 1;
+        let page;
+        try {
+          page = await this.adapter.readPage(sourceUrl, {
+            ...readOptions,
+            timeoutMs: pageTimeoutMs,
+          });
+        } catch (error) {
+          if (
+            discovery &&
+            error instanceof BrowserReadError &&
+            (error.code === 'NAVIGATION_FAILED' || error.code === 'NAVIGATION_TIMEOUT')
+          ) {
+            unreadableSourceCount += 1;
+            await this.repository.appendEvent(task.id, 'source_unreadable', {
+              url: sourceUrl,
+              reason: error.code,
+            });
+            continue;
+          }
+          throw error;
+        }
         const source = await this.repository.recordSource(task.id, page);
         const quality = assessSourceQuality(page, source.id, sourceSnapshots);
         sourceResults.push({
@@ -122,7 +161,12 @@ export class ResearchService {
           .map((source) => source.id),
       );
       let findings = extractCrossSourceFindings(evidenceRecords, duplicateSourceIds);
-      if (this.claimExtractor && securityChallengeSourceCount === 0 && evidenceRecords.length > 0) {
+      if (
+        this.claimExtractor &&
+        securityChallengeSourceCount === 0 &&
+        unreadableSourceCount === 0 &&
+        evidenceRecords.length > 0
+      ) {
         try {
           const remainingMs = Math.floor(
             MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
@@ -158,18 +202,29 @@ export class ResearchService {
             errorType: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
           });
         }
-      } else if (this.claimExtractor && securityChallengeSourceCount > 0) {
+      } else if (
+        this.claimExtractor &&
+        (securityChallengeSourceCount > 0 || unreadableSourceCount > 0)
+      ) {
         await this.repository.appendEvent(task.id, 'claims_extraction_skipped', {
           reason: 'incomplete_source_coverage',
           securityChallengeSourceCount,
+          unreadableSourceCount,
         });
       }
 
       const result: ResearchResult = {
         request: input.request,
+        ...(discovery === undefined ? {} : { discovery }),
         coverage: {
-          status: securityChallengeSourceCount === 0 ? 'complete' : 'incomplete',
+          status:
+            securityChallengeSourceCount === 0 &&
+            unreadableSourceCount === 0 &&
+            !(discovery !== undefined && discovery.candidateCount === 0)
+              ? 'complete'
+              : 'incomplete',
           securityChallengeSourceCount,
+          unreadableSourceCount,
         },
         sources: sourceResults,
         evidence,

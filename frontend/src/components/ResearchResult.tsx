@@ -10,6 +10,7 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
     securityChallengeSourceCount: 0,
   };
   const blockedSourceCount = coverage.securityChallengeSourceCount;
+  const unreadableSourceCount = coverage.unreadableSourceCount ?? 0;
 
   return (
     <section className="results-stack" aria-label="Research results">
@@ -23,15 +24,37 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
         <span className="result-count">{result.sources.length} sources</span>
       </div>
 
+      {result.discovery ? (
+        <p className="discovery-note" role="status">
+          Web search found {result.discovery.candidateCount} candidate pages; Serena attempted to
+          read {result.discovery.attemptedCount} of them. Only readable page content is used as
+          evidence.
+        </p>
+      ) : null}
+
       {coverage.status === 'incomplete' ? (
         <div className="coverage-notice" role="status">
           <strong>Research incomplete</strong>
-          <span>
-            {blockedSourceCount} of {result.sources.length} source pages required a security
-            verification. Serena excluded their text from evidence and AI extraction, so this run
-            cannot establish whether matching opportunities exist. Review those sites yourself or
-            try accessible sources; Serena will not bypass the security checks.
-          </span>
+          {blockedSourceCount > 0 ? (
+            <span>
+              {blockedSourceCount} of {result.sources.length} source pages required a security
+              verification. Serena excluded their text from evidence and AI extraction, so this run
+              cannot establish whether matching opportunities exist. Review those sites yourself or
+              try accessible sources; Serena will not bypass the security checks.
+            </span>
+          ) : unreadableSourceCount > 0 ? (
+            <span>
+              {unreadableSourceCount} discovered page{unreadableSourceCount === 1 ? '' : 's'} did
+              not respond or denied access. Serena skipped them and did not attempt to bypass any
+              checks. The remaining readable pages may not represent the full set of opportunities.
+            </span>
+          ) : (
+            <span>
+              Serena could not find a usable page for this run. This does not establish that no
+              matching opportunities exist; try a more specific question or provide known public
+              URLs.
+            </span>
+          )}
         </div>
       ) : null}
 

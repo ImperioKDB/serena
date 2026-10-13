@@ -38,9 +38,15 @@ export interface ResearchFinding {
 
 export interface ResearchResult {
   request: string;
+  discovery?: {
+    provider: 'tavily';
+    candidateCount: number;
+    attemptedCount: number;
+  };
   coverage?: {
     status: 'complete' | 'incomplete';
     securityChallengeSourceCount: number;
+    unreadableSourceCount?: number;
   };
   sources: ResearchSource[];
   evidence: ResearchEvidence[];

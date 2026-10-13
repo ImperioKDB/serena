@@ -5,6 +5,7 @@ import { createApp } from '../src/api/app.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
 import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
 import type { ClaimExtractor } from '../src/research/claim-extractor.js';
+import type { SearchProvider } from '../src/search/search-provider.js';
 
 const successfulResult: BrowserReadResult = {
   url: 'https://example.com/article',
@@ -443,6 +444,65 @@ describe('Serena API', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('INVALID_REQUEST');
+  });
+
+  it('discovers bounded candidates and reads only them through the browser adapter', async () => {
+    const repository = new InMemoryTaskRepository();
+    const readPage = vi.fn(async (target: string) => ({
+      ...successfulResult,
+      url: target,
+      finalUrl: target,
+      text: `Readable content from ${target}`,
+    }));
+    const searchProvider: SearchProvider = {
+      search: vi.fn(async () =>
+        Array.from({ length: 8 }, (_, index) => ({
+          url: `https://example.com/page-${index + 1}`,
+          title: `Result ${index + 1}`,
+          rank: index + 1,
+        })),
+      ),
+    };
+    app = createApp(adapterFor(readPage), { taskRepository: repository, searchProvider });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: {
+        request: 'Find scholarships for Nigerian undergraduates.',
+        sourceMode: 'discover',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(searchProvider.search).toHaveBeenCalledWith(
+      'Find scholarships for Nigerian undergraduates.',
+      { maxResults: 10 },
+    );
+    expect(readPage).toHaveBeenCalledTimes(5);
+    expect(response.json().data.discovery).toEqual({
+      provider: 'tavily',
+      candidateCount: 8,
+      attemptedCount: 5,
+    });
+    expect(response.json().data.sources).toHaveLength(5);
+  });
+
+  it('keeps automatic discovery unavailable when the server has no provider key', async () => {
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      { taskRepository: repository },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: { request: 'Find scholarships.', sourceMode: 'discover' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe('SEARCH_UNAVAILABLE');
   });
 
   it('maps browser errors without leaking internal details', async () => {

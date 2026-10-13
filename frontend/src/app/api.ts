@@ -17,6 +17,7 @@ export async function submitResearch(input: {
   accessToken: string;
   request: string;
   sources: string[];
+  sourceMode: 'provided' | 'discover';
 }): Promise<ResearchApiResponse> {
   const response = await fetch(`${input.apiUrl.replace(/\/$/u, '')}/v1/research-tasks`, {
     method: 'POST',
@@ -26,7 +27,8 @@ export async function submitResearch(input: {
     },
     body: JSON.stringify({
       request: input.request,
-      sources: input.sources,
+      sourceMode: input.sourceMode,
+      ...(input.sourceMode === 'provided' ? { sources: input.sources } : {}),
       requiresApproval: false,
     }),
   });

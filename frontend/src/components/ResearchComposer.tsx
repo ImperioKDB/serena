@@ -3,6 +3,7 @@ import { useState, type FormEvent, type ReactElement } from 'react';
 export interface ResearchComposerValues {
   request: string;
   sources: string[];
+  sourceMode: 'provided' | 'discover';
 }
 
 export function ResearchComposer({
@@ -16,6 +17,7 @@ export function ResearchComposer({
 }): ReactElement {
   const [request, setRequest] = useState('');
   const [sourcesText, setSourcesText] = useState('');
+  const [sourceMode, setSourceMode] = useState<'provided' | 'discover'>('discover');
   const [error, setError] = useState<string | null>(null);
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -29,16 +31,16 @@ export function ResearchComposer({
       setError('Write a research question before submitting.');
       return;
     }
-    if (sources.length === 0) {
+    if (sourceMode === 'provided' && sources.length === 0) {
       setError('Add at least one public HTTPS source URL.');
       return;
     }
-    if (sources.some((source) => !/^https:\/\//u.test(source))) {
+    if (sourceMode === 'provided' && sources.some((source) => !/^https:\/\/\S+$/u.test(source))) {
       setError('Sources must use HTTPS URLs.');
       return;
     }
     setError(null);
-    onSubmit({ request: request.trim(), sources });
+    onSubmit({ request: request.trim(), sources, sourceMode });
   }
 
   return (
@@ -46,7 +48,9 @@ export function ResearchComposer({
       <div className="composer-card__intro">
         <p className="eyebrow">New investigation</p>
         <h2>What should Serena investigate?</h2>
-        <p>Give Serena a focused question and the public sources you want compared.</p>
+        <p>
+          Give Serena a focused question. Search automatically or provide public sources yourself.
+        </p>
       </div>
 
       <label className="field">
@@ -54,7 +58,7 @@ export function ResearchComposer({
         <textarea
           value={request}
           onChange={(event) => setRequest(event.target.value)}
-          placeholder="Compare the eligibility requirements in these scholarship sources."
+          placeholder="Find current scholarships for Nigerian undergraduates."
           rows={4}
           maxLength={2000}
           disabled={disabled}
@@ -62,17 +66,46 @@ export function ResearchComposer({
         <small>{request.length}/2000 characters</small>
       </label>
 
-      <label className="field">
-        <span>Public source URLs</span>
-        <textarea
-          value={sourcesText}
-          onChange={(event) => setSourcesText(event.target.value)}
-          placeholder={'https://example.org/source-one\nhttps://example.org/source-two'}
-          rows={4}
-          disabled={disabled}
-        />
-        <small>One HTTPS URL per line, up to five sources.</small>
-      </label>
+      <fieldset className="source-mode">
+        <legend>How should Serena find sources?</legend>
+        <label>
+          <input
+            type="radio"
+            name="sourceMode"
+            checked={sourceMode === 'discover'}
+            onChange={() => setSourceMode('discover')}
+            disabled={disabled}
+          />
+          <span>Search automatically</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="sourceMode"
+            checked={sourceMode === 'provided'}
+            onChange={() => setSourceMode('provided')}
+            disabled={disabled}
+          />
+          <span>Use URLs I provide</span>
+        </label>
+        {sourceMode === 'discover' ? (
+          <small>Serena searches the web, then checks up to five public pages it can read.</small>
+        ) : null}
+      </fieldset>
+
+      {sourceMode === 'provided' ? (
+        <label className="field">
+          <span>Public source URLs</span>
+          <textarea
+            value={sourcesText}
+            onChange={(event) => setSourcesText(event.target.value)}
+            placeholder={'https://example.org/source-one\nhttps://example.org/source-two'}
+            rows={4}
+            disabled={disabled}
+          />
+          <small>One HTTPS URL per line, up to five sources.</small>
+        </label>
+      ) : null}
 
       {error ? (
         <p className="form-error" role="alert">
