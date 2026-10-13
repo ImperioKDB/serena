@@ -419,6 +419,23 @@ h3 {
   display: grid;
   gap: 0.85rem;
 }
+.coverage-notice {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid var(--warning-line);
+  border-radius: 1rem;
+  padding: 1rem 1.1rem;
+  background: var(--warning-soft);
+  color: var(--ink-strong);
+}
+.coverage-notice strong {
+  color: var(--warning);
+}
+.coverage-notice span {
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
 .finding-card,
 .source-card {
   padding: 1.1rem;

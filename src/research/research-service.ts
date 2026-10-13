@@ -46,6 +46,7 @@ export class ResearchService {
     const sourceResults: ResearchResult['sources'] = [];
     const evidence: ResearchResult['evidence'] = [];
     const sourceSnapshots: Array<{ id: string; hash: string }> = [];
+    let securityChallengeSourceCount = 0;
     const readOptions: BrowserReadOptions = {
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       ...(input.allowedDomains === undefined ? {} : { allowedDomains: input.allowedDomains }),
@@ -66,14 +67,6 @@ export class ResearchService {
         });
         const source = await this.repository.recordSource(task.id, page);
         const quality = assessSourceQuality(page, source.id, sourceSnapshots);
-        sourceSnapshots.push({ id: source.id, hash: quality.contentHash });
-        const evidenceRecord = await this.repository.recordEvidence(task.id, source.id, {
-          excerpt: page.text.slice(0, MAX_EVIDENCE_CHARS),
-          locator: 'body visible-text prefix',
-          extractionMethod: 'visible-text-prefix',
-          verificationStatus: 'unverified',
-        });
-
         sourceResults.push({
           id: source.id,
           url: page.url,
@@ -82,6 +75,25 @@ export class ResearchService {
           retrievedAt: page.retrievedAt,
           quality,
         });
+
+        if (quality.accessStatus === 'security-challenge') {
+          securityChallengeSourceCount += 1;
+          await this.repository.appendEvent(task.id, 'source_blocked', {
+            sourceId: source.id,
+            url: page.finalUrl,
+            reason: 'security_challenge',
+          });
+          continue;
+        }
+
+        sourceSnapshots.push({ id: source.id, hash: quality.contentHash });
+        const evidenceRecord = await this.repository.recordEvidence(task.id, source.id, {
+          excerpt: page.text.slice(0, MAX_EVIDENCE_CHARS),
+          locator: 'body visible-text prefix',
+          extractionMethod: 'visible-text-prefix',
+          verificationStatus: 'unverified',
+        });
+
         evidence.push({
           id: evidenceRecord.id,
           sourceId: source.id,
@@ -110,7 +122,7 @@ export class ResearchService {
           .map((source) => source.id),
       );
       let findings = extractCrossSourceFindings(evidenceRecords, duplicateSourceIds);
-      if (this.claimExtractor) {
+      if (this.claimExtractor && securityChallengeSourceCount === 0 && evidenceRecords.length > 0) {
         try {
           const remainingMs = Math.floor(
             MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
@@ -146,10 +158,19 @@ export class ResearchService {
             errorType: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
           });
         }
+      } else if (this.claimExtractor && securityChallengeSourceCount > 0) {
+        await this.repository.appendEvent(task.id, 'claims_extraction_skipped', {
+          reason: 'incomplete_source_coverage',
+          securityChallengeSourceCount,
+        });
       }
 
       const result: ResearchResult = {
         request: input.request,
+        coverage: {
+          status: securityChallengeSourceCount === 0 ? 'complete' : 'incomplete',
+          securityChallengeSourceCount,
+        },
         sources: sourceResults,
         evidence,
         findings,

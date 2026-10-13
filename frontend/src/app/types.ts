@@ -3,6 +3,7 @@ export type FindingStatus = 'proposed' | 'supported' | 'disputed' | 'exact_match
 export interface SourceQuality {
   domain: string;
   kind: 'government' | 'education' | 'organization-domain' | 'commercial' | 'unknown';
+  accessStatus?: 'readable' | 'security-challenge';
   signals: string[];
   contentHash: string;
   duplicateOfSourceId?: string;
@@ -37,6 +38,10 @@ export interface ResearchFinding {
 
 export interface ResearchResult {
   request: string;
+  coverage?: {
+    status: 'complete' | 'incomplete';
+    securityChallengeSourceCount: number;
+  };
   sources: ResearchSource[];
   evidence: ResearchEvidence[];
   findings: ResearchFinding[];

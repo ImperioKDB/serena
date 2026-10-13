@@ -1,0 +1,90 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
+import type { BrowserReadResult } from '../src/core/result.js';
+import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
+import type { ClaimExtractor } from '../src/research/claim-extractor.js';
+import { ResearchService } from '../src/research/research-service.js';
+
+const challengeText =
+  'Performing security verification. This website uses a security service to protect against malicious bots. This page is displayed while the website verifies you are not a bot. Ray ID: a49f47792f3de006. Performance and Security by Cloudflare Privacy.';
+
+function page(url: string, text: string): BrowserReadResult {
+  return {
+    url,
+    finalUrl: url,
+    title: text === challengeText ? 'Performing security verification' : 'Scholarships',
+    text,
+    retrievedAt: '2026-10-13T00:00:00.000Z',
+    durationMs: 25,
+  };
+}
+
+function adapterFor(readPage: BrowserAdapter['readPage']): BrowserAdapter {
+  return { readPage };
+}
+
+describe('research service security-challenge handling', () => {
+  it('does not create evidence or findings from pages that require security verification', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = {
+      extract: vi.fn(async () => []),
+    };
+    const service = new ResearchService(
+      adapterFor(async (url) => page(url, challengeText)),
+      repository,
+      claimExtractor,
+    );
+
+    const { taskId, result } = await service.run({
+      request: 'Find scholarships for Nigerian undergraduates.',
+      sources: ['https://scholarshipair.com/scholarships', 'https://scholarsworld.ng/scholarships'],
+    });
+
+    expect(result.coverage).toEqual({
+      status: 'incomplete',
+      securityChallengeSourceCount: 2,
+    });
+    expect(result.sources).toHaveLength(2);
+    expect(
+      result.sources.every((source) => source.quality.accessStatus === 'security-challenge'),
+    ).toBe(true);
+    expect(result.evidence).toEqual([]);
+    expect(result.findings).toEqual([]);
+    expect(repository.getEvidence(taskId)).toEqual([]);
+    expect(claimExtractor.extract).not.toHaveBeenCalled();
+  });
+
+  it('marks partial coverage and excludes challenge text when only some sources are blocked', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = {
+      extract: vi.fn(async () => []),
+    };
+    const service = new ResearchService(
+      adapterFor(async (url) =>
+        page(
+          url,
+          url.includes('blocked')
+            ? challengeText
+            : 'An accessible scholarship page contains this source text.',
+        ),
+      ),
+      repository,
+      claimExtractor,
+    );
+
+    const { taskId, result } = await service.run({
+      request: 'Find scholarships for Nigerian undergraduates.',
+      sources: ['https://example.com/accessible', 'https://example.com/blocked'],
+    });
+
+    expect(result.coverage).toEqual({
+      status: 'incomplete',
+      securityChallengeSourceCount: 1,
+    });
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]?.excerpt).not.toContain('Performing security verification');
+    expect(repository.getEvidence(taskId)).toHaveLength(1);
+    expect(claimExtractor.extract).not.toHaveBeenCalled();
+  });
+});

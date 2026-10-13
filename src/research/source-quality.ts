@@ -8,6 +8,7 @@ export type SourceKind =
 export interface SourceQualityMetadata {
   domain: string;
   kind: SourceKind;
+  accessStatus: 'readable' | 'security-challenge';
   signals: string[];
   contentHash: string;
   duplicateOfSourceId?: string;
@@ -44,6 +45,21 @@ function contentHash(text: string): string {
     .digest('hex');
 }
 
+function hasSecurityChallenge(title: string, text: string): boolean {
+  const content = `${title}\n${text}`;
+  const strongChallengeIndicators = [
+    /\bperforming security verification\b/iu,
+    /\bthis page is displayed while the website verifies you are not a bot\b/iu,
+    /\bverify (?:that )?you are (?:a )?human\b/iu,
+    /\bchecking your browser before accessing\b/iu,
+    /\bcomplete the (?:security|captcha) challenge\b/iu,
+    /\benable javascript and cookies to continue\b/iu,
+    /\bcf-chl-|challenge-platform/iu,
+  ];
+
+  return strongChallengeIndicators.some((indicator) => indicator.test(content));
+}
+
 export function assessSourceQuality(
   source: BrowserReadResult,
   sourceId: string,
@@ -52,13 +68,20 @@ export function assessSourceQuality(
   const url = new URL(source.finalUrl);
   const domain = normalizeHostname(url.hostname);
   const classification = classifyKind(domain);
+  const accessStatus = hasSecurityChallenge(source.title, source.text)
+    ? 'security-challenge'
+    : 'readable';
   const hash = contentHash(source.text);
   const duplicate = previous.find((item) => item.hash === hash);
 
   return {
     domain,
     kind: classification.kind,
-    signals: classification.signal === undefined ? [] : [classification.signal],
+    accessStatus,
+    signals: [
+      ...(classification.signal === undefined ? [] : [classification.signal]),
+      ...(accessStatus === 'security-challenge' ? ['security-challenge'] : []),
+    ],
     contentHash: hash,
     ...(duplicate === undefined ? {} : { duplicateOfSourceId: duplicate.id }),
     assessment: 'domain-signals-only',

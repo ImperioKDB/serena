@@ -30,6 +30,10 @@ export interface ResearchFinding {
 
 export interface ResearchResult {
   request: string;
+  coverage: {
+    status: 'complete' | 'incomplete';
+    securityChallengeSourceCount: number;
+  };
   sources: Array<{
     id: string;
     url: string;
