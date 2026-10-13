@@ -2,18 +2,24 @@ import { useEffect, useState, type ReactElement } from 'react';
 import type { Session } from '@supabase/supabase-js';
 
 import { getDefaultApiUrl, SerenaApiError, submitResearch } from './api';
+import { formatOAuthCallbackError, readOAuthCallbackState } from './oauth-callback.js';
 import { getSupabaseClient } from './supabase';
 import type { ResearchResult } from './types';
 import { ResearchComposer, type ResearchComposerValues } from '../components/ResearchComposer';
 import { ResearchResult as ResearchResultView } from '../components/ResearchResult';
 
 export function App(): ReactElement {
+  const [oauthCallbackState] = useState(() =>
+    readOAuthCallbackState(window.location.search, window.location.hash),
+  );
   const apiUrl = getDefaultApiUrl();
   const supabase = getSupabaseClient();
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(() =>
+    formatOAuthCallbackError(oauthCallbackState),
+  );
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,16 +31,33 @@ export function App(): ReactElement {
       return;
     }
     let active = true;
-    void supabase.auth.getSession().then(({ data, error: sessionError }) => {
-      if (!active) return;
-      if (sessionError) setAuthError('Could not restore your sign-in session. Sign in again.');
-      setSession(data.session);
-      setAuthLoading(false);
-    });
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setAuthLoading(false);
+      if (nextSession) setAuthError(null);
     });
+    void supabase.auth
+      .getSession()
+      .then(({ data, error: sessionError }) => {
+        if (!active) return;
+        if (sessionError && !formatOAuthCallbackError(oauthCallbackState)) {
+          setAuthError('Could not restore your sign-in session. Sign in again.');
+        }
+        setSession(data.session);
+        setAuthLoading(false);
+        if (oauthCallbackState.hasAuthorizationCode && !data.session && !sessionError) {
+          setAuthError(
+            'Google returned to Serena, but no sign-in session was established. Start again from https://serena-frontend.vercel.app in the same browser tab. If it repeats, check the Supabase allowed return URL and Google OAuth callback settings.',
+          );
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        if (!formatOAuthCallbackError(oauthCallbackState)) {
+          setAuthError('Serena could not finish checking your sign-in session. Please try again.');
+        }
+        setAuthLoading(false);
+      });
     return () => {
       active = false;
       data.subscription.unsubscribe();
