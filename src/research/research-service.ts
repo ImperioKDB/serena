@@ -64,11 +64,16 @@ export class ResearchService {
       let discovery: ResearchResult['discovery'] | undefined;
       if ((input.sourceMode ?? 'provided') === 'discover') {
         if (!this.searchProvider) throw new Error('Automatic search is not configured.');
-        const candidates = await this.searchProvider.search(input.request, { maxResults: 10 });
+        const searchResult = await this.searchProvider.search(input.request, { maxResults: 10 });
+        const candidates = searchResult.candidates;
         sourceUrls = candidates.slice(0, 5).map((candidate) => candidate.url);
-        discovery = { provider: 'tavily', candidateCount: candidates.length, attemptedCount: 0 };
+        discovery = {
+          provider: searchResult.provider,
+          candidateCount: candidates.length,
+          attemptedCount: 0,
+        };
         await this.repository.appendEvent(task.id, 'search_completed', {
-          provider: 'tavily',
+          provider: searchResult.provider,
           candidateCount: candidates.length,
           candidates: candidates.slice(0, 10).map(({ url, title, rank }) => ({ url, title, rank })),
         });

@@ -1,9 +1,11 @@
-import type { SearchCandidate, SearchProvider } from './search-provider.js';
+import type { SearchCandidate, SearchProvider, SearchProviderResponse } from './search-provider.js';
 
 const TAVILY_SEARCH_URL = 'https://api.tavily.com/search';
 const MAX_RESULTS = 10;
 
 export class TavilySearchProvider implements SearchProvider {
+  public readonly name = 'tavily';
+
   public constructor(private readonly apiKey: string) {
     if (!apiKey.trim()) throw new Error('Tavily API key must not be empty.');
   }
@@ -11,7 +13,7 @@ export class TavilySearchProvider implements SearchProvider {
   public async search(
     query: string,
     options: { maxResults?: number; signal?: AbortSignal } = {},
-  ): Promise<SearchCandidate[]> {
+  ): Promise<SearchProviderResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5_000);
     const abortFromCaller = () => controller.abort(options.signal?.reason);
@@ -70,7 +72,7 @@ export class TavilySearchProvider implements SearchProvider {
           // Malformed URLs are discarded; the browser adapter remains the final SSRF guard.
         }
       }
-      return candidates;
+      return { provider: this.name, candidates };
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener('abort', abortFromCaller);

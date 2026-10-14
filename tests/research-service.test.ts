@@ -106,10 +106,14 @@ describe('research service discovery', () => {
       new InMemoryTaskRepository(),
       undefined,
       {
-        search: async () => [
-          { url: 'https://example.com/blocked', title: 'Blocked', rank: 1 },
-          { url: 'https://example.org/open', title: 'Open', rank: 2 },
-        ],
+        name: 'mock',
+        search: async () => ({
+          provider: 'mock',
+          candidates: [
+            { url: 'https://example.com/blocked', title: 'Blocked', rank: 1 },
+            { url: 'https://example.org/open', title: 'Open', rank: 2 },
+          ],
+        }),
       },
     );
 
@@ -130,7 +134,7 @@ describe('research service discovery', () => {
       adapterFor(async () => page('https://example.com', 'unused')),
       new InMemoryTaskRepository(),
       undefined,
-      { search: async () => [] },
+      { name: 'firecrawl', search: async () => ({ provider: 'firecrawl', candidates: [] }) },
     );
 
     const { result } = await service.run({
@@ -141,17 +145,25 @@ describe('research service discovery', () => {
     expect(result.coverage.status).toBe('incomplete');
     expect(result.sources).toEqual([]);
     expect(result.findings).toEqual([]);
-    expect(result.discovery).toEqual({ provider: 'tavily', candidateCount: 0, attemptedCount: 0 });
+    expect(result.discovery).toEqual({
+      provider: 'firecrawl',
+      candidateCount: 0,
+      attemptedCount: 0,
+    });
   });
 
   it('skips security-check pages and continues through the bounded candidate list', async () => {
     const repository = new InMemoryTaskRepository();
     const attempted: string[] = [];
     const searchProvider: SearchProvider = {
-      search: async () => [
-        { url: 'https://example.com/blocked', title: 'Challenge', rank: 1 },
-        { url: 'https://example.org/readable', title: 'Scholarship listing', rank: 2 },
-      ],
+      name: 'firecrawl',
+      search: async () => ({
+        provider: 'firecrawl',
+        candidates: [
+          { url: 'https://example.com/blocked', title: 'Challenge', rank: 1 },
+          { url: 'https://example.org/readable', title: 'Scholarship listing', rank: 2 },
+        ],
+      }),
     };
     const service = new ResearchService(
       adapterFor(async (url) => {
@@ -174,7 +186,11 @@ describe('research service discovery', () => {
     });
 
     expect(attempted).toEqual(['https://example.com/blocked', 'https://example.org/readable']);
-    expect(result.discovery).toEqual({ provider: 'tavily', candidateCount: 2, attemptedCount: 2 });
+    expect(result.discovery).toEqual({
+      provider: 'firecrawl',
+      candidateCount: 2,
+      attemptedCount: 2,
+    });
     expect(result.coverage.status).toBe('incomplete');
     expect(result.sources).toHaveLength(2);
     expect(result.evidence).toHaveLength(1);

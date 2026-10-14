@@ -10,6 +10,7 @@ import type { AuthVerifier } from './supabase-auth.js';
 import type { RequestAdmissionStore } from '../persistence/request-admission-store.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from '../research/claim-extractor.js';
+import { SearchProvidersUnavailableError } from '../search/fallback-search-provider.js';
 import type { SearchProvider } from '../search/search-provider.js';
 import { ResearchService } from '../research/research-service.js';
 
@@ -372,7 +373,7 @@ export function createApp(
             errorResponse(
               request.id,
               'SEARCH_UNAVAILABLE',
-              'Automatic search is not configured yet. Add a server-side search provider key or use public URLs you already know.',
+              'Automatic search is not available right now. Please try again later or provide public URLs directly.',
             ),
           );
       }
@@ -398,6 +399,17 @@ export function createApp(
         taskId: execution.taskId,
       });
     } catch (error) {
+      if (error instanceof SearchProvidersUnavailableError) {
+        return reply
+          .code(503)
+          .send(
+            errorResponse(
+              request.id,
+              'SEARCH_UNAVAILABLE',
+              'Automatic search is temporarily unavailable. Please try again later or provide public URLs directly.',
+            ),
+          );
+      }
       if (error instanceof BrowserReadError) {
         const mapped = mapBrowserError(error);
         return reply

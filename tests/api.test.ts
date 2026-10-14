@@ -5,6 +5,7 @@ import { createApp } from '../src/api/app.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
 import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
 import type { ClaimExtractor } from '../src/research/claim-extractor.js';
+import { SearchProvidersUnavailableError } from '../src/search/fallback-search-provider.js';
 import type { SearchProvider } from '../src/search/search-provider.js';
 
 const successfulResult: BrowserReadResult = {
@@ -455,13 +456,15 @@ describe('Serena API', () => {
       text: `Readable content from ${target}`,
     }));
     const searchProvider: SearchProvider = {
-      search: vi.fn(async () =>
-        Array.from({ length: 8 }, (_, index) => ({
+      name: 'firecrawl',
+      search: vi.fn(async () => ({
+        provider: 'firecrawl',
+        candidates: Array.from({ length: 8 }, (_, index) => ({
           url: `https://example.com/page-${index + 1}`,
           title: `Result ${index + 1}`,
           rank: index + 1,
         })),
-      ),
+      })),
     };
     app = createApp(adapterFor(readPage), { taskRepository: repository, searchProvider });
 
@@ -481,14 +484,14 @@ describe('Serena API', () => {
     );
     expect(readPage).toHaveBeenCalledTimes(5);
     expect(response.json().data.discovery).toEqual({
-      provider: 'tavily',
+      provider: 'firecrawl',
       candidateCount: 8,
       attemptedCount: 5,
     });
     expect(response.json().data.sources).toHaveLength(5);
   });
 
-  it('keeps automatic discovery unavailable when the server has no provider key', async () => {
+  it('keeps manual research available when automatic search is not configured', async () => {
     const repository = new InMemoryTaskRepository();
     app = createApp(
       adapterFor(async () => successfulResult),
@@ -503,6 +506,30 @@ describe('Serena API', () => {
 
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe('SEARCH_UNAVAILABLE');
+  });
+
+  it('returns a safe temporary-unavailable response when every search provider is throttled', async () => {
+    const repository = new InMemoryTaskRepository();
+    const searchProvider: SearchProvider = {
+      name: 'fallback',
+      search: async () => {
+        throw new SearchProvidersUnavailableError();
+      },
+    };
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      { taskRepository: repository, searchProvider },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: { request: 'Search for current information.', sourceMode: 'discover' },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe('SEARCH_UNAVAILABLE');
+    expect(response.body).not.toContain('upstream');
   });
 
   it('maps browser errors without leaking internal details', async () => {

@@ -34,7 +34,10 @@ describe('TavilySearchProvider', () => {
     const provider = new TavilySearchProvider('server-secret');
     const results = await provider.search('scholarships for Nigerian undergraduates');
 
-    expect(results).toEqual([{ url: 'https://example.org/award', title: 'Award', rank: 1 }]);
+    expect(results).toEqual({
+      provider: 'tavily',
+      candidates: [{ url: 'https://example.org/award', title: 'Award', rank: 1 }],
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
     const request = fetchMock.mock.calls[0]?.[1];
     expect(new Headers(request?.headers).get('authorization')).toBe('Bearer server-secret');

@@ -31,7 +31,7 @@ export interface ResearchFinding {
 export interface ResearchResult {
   request: string;
   discovery?: {
-    provider: 'tavily';
+    provider: string;
     candidateCount: number;
     attemptedCount: number;
   };
