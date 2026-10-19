@@ -6,6 +6,7 @@ import { formatOAuthCallbackError, readOAuthCallbackState } from './oauth-callba
 import { getSupabaseClient } from './supabase';
 import type { ResearchResult } from './types';
 import { ResearchComposer, type ResearchComposerValues } from '../components/ResearchComposer';
+import { ResearchHistory } from '../components/ResearchHistory';
 import { ResearchResult as ResearchResultView } from '../components/ResearchResult';
 
 export function App(): ReactElement {
@@ -24,6 +25,7 @@ export function App(): ReactElement {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<string | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!supabase) {
@@ -105,6 +107,7 @@ export function App(): ReactElement {
         accessToken: session.access_token,
       });
       setResult(response.data);
+      setHistoryRefreshKey((current) => current + 1);
     } catch (submissionError) {
       setError(
         submissionError instanceof SerenaApiError
@@ -228,6 +231,14 @@ export function App(): ReactElement {
             </div>
             <ResearchResultView result={result} />
           </>
+        ) : null}
+
+        {session?.access_token ? (
+          <ResearchHistory
+            apiUrl={apiUrl}
+            accessToken={session.access_token}
+            refreshKey={historyRefreshKey}
+          />
         ) : null}
       </main>
 

@@ -3,7 +3,10 @@ import type { ResearchEvidenceRecord, ResearchSourceRecord } from '../research/t
 import type {
   CreateEvidenceInput,
   CreateTaskInput,
+  ListOwnedTasksOptions,
+  ResearchTaskDetail,
   ResearchTaskRecord,
+  ResearchTaskSummary,
   TaskRepository,
   TaskStatus,
 } from './task-repository.js';
@@ -16,6 +19,8 @@ import {
 interface StoredTask extends ResearchTaskRecord {
   ownerId?: string;
   requestText: string;
+  createdAt: string;
+  finishedAt?: string;
   input: Record<string, unknown>;
   result?: BrowserReadResult;
   researchResult?: unknown;
@@ -40,6 +45,7 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
       status: 'queued',
       ...(input.ownerId === undefined ? {} : { ownerId: input.ownerId }),
       requestText: input.requestText,
+      createdAt: new Date().toISOString(),
       input: input.input,
       events: [],
       sources: [],
@@ -47,6 +53,39 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
     };
     this.tasks.set(id, task);
     return { id, status: task.status };
+  }
+
+  public async listOwnedTasks(
+    ownerId: string,
+    options: ListOwnedTasksOptions,
+  ): Promise<ResearchTaskSummary[]> {
+    return [...this.tasks.values()]
+      .filter((task) => task.ownerId === ownerId)
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+      )
+      .slice(options.offset, options.offset + options.limit)
+      .map((task) => this.toSummary(task));
+  }
+
+  public async getOwnedTask(
+    ownerId: string,
+    taskId: string,
+  ): Promise<ResearchTaskDetail | undefined> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.ownerId !== ownerId) return undefined;
+    return {
+      ...this.toSummary(task),
+      result: task.researchResult ?? task.result ?? null,
+    };
+  }
+
+  public async deleteOwnedTask(ownerId: string, taskId: string): Promise<boolean> {
+    const task = this.tasks.get(taskId);
+    if (!task || task.ownerId !== ownerId) return false;
+    this.tasks.delete(taskId);
+    return true;
   }
 
   public async recordSource(
@@ -99,12 +138,14 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
     } else {
       task.researchResult = result;
     }
+    task.finishedAt = new Date().toISOString();
   }
 
   public async markFailed(taskId: string, errorCode: string): Promise<void> {
     const task = this.requireTask(taskId);
     task.status = 'failed';
     task.errorCode = errorCode;
+    task.finishedAt = new Date().toISOString();
   }
 
   public async acquireRequest(requestId: string, keyHash: string): Promise<AdmissionDecision> {
@@ -153,6 +194,26 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
 
   public getEvidence(taskId: string): ResearchEvidenceRecord[] {
     return [...(this.tasks.get(taskId)?.evidence ?? [])];
+  }
+
+  private toSummary(task: StoredTask): ResearchTaskSummary {
+    const findings = this.getArrayProperty(task.researchResult, 'findings');
+    return {
+      id: task.id,
+      status: task.status,
+      requestText: task.requestText,
+      createdAt: task.createdAt,
+      finishedAt: task.finishedAt ?? null,
+      errorCode: task.errorCode ?? null,
+      sourceCount: task.sources.length,
+      findingCount: findings.length,
+    };
+  }
+
+  private getArrayProperty(value: unknown, key: string): unknown[] {
+    if (typeof value !== 'object' || value === null || !(key in value)) return [];
+    const property = value[key as keyof typeof value];
+    return Array.isArray(property) ? property : [];
   }
 
   private requireTask(taskId: string): StoredTask {

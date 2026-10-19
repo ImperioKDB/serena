@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { z } from 'zod';
 
@@ -38,6 +38,23 @@ const researchRequestSchema = z
       (value.sourceMode !== 'discover' && value.sources !== undefined),
     { message: 'Provide sources or choose discovery mode, but not both.' },
   );
+
+const researchHistoryQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+    offset: z.coerce.number().int().min(0).max(10_000).default(0),
+  })
+  .strict();
+
+const taskIdParamsSchema = z
+  .object({
+    taskId: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-zA-Z0-9_-]+$/u),
+  })
+  .strict();
 
 export interface AppOptions {
   apiKey?: string;
@@ -135,7 +152,7 @@ export function createApp(
   ].map(normalizeCorsOrigin);
   void app.register(cors, {
     origin: [...new Set(allowedOrigins)],
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
 
@@ -259,6 +276,141 @@ export function createApp(
   });
 
   app.get('/health', async () => ({ status: 'ok' }));
+
+  const requireHistoryOwner = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): string | undefined => {
+    const ownerId = authenticatedUsers.get(request);
+    if (ownerId) return ownerId;
+    const authenticatedWithLegacyKey = requestPrincipals.has(request);
+    void reply
+      .code(authenticatedWithLegacyKey ? 403 : 401)
+      .send(
+        errorResponse(
+          request.id,
+          'USER_AUTH_REQUIRED',
+          'Research history requires a Google-authenticated user account.',
+        ),
+      );
+    return undefined;
+  };
+
+  app.get('/v1/research-tasks', async (request, reply) => {
+    const ownerId = requireHistoryOwner(request, reply);
+    if (!ownerId) return;
+    if (!options.taskRepository) {
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+    const parsed = researchHistoryQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(errorResponse(request.id, 'INVALID_REQUEST', 'History pagination is invalid.'));
+    }
+
+    try {
+      const rows = await options.taskRepository.listOwnedTasks(ownerId, {
+        limit: parsed.data.limit + 1,
+        offset: parsed.data.offset,
+      });
+      const hasMore = rows.length > parsed.data.limit;
+      return reply.code(200).send({
+        data: {
+          items: rows.slice(0, parsed.data.limit),
+          limit: parsed.data.limit,
+          offset: parsed.data.offset,
+          hasMore,
+        },
+        requestId: request.id,
+      });
+    } catch (error) {
+      request.log.error({ err: error }, 'Could not list owner research history');
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+  });
+
+  app.get('/v1/research-tasks/:taskId', async (request, reply) => {
+    const ownerId = requireHistoryOwner(request, reply);
+    if (!ownerId) return;
+    if (!options.taskRepository) {
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+    const parsed = taskIdParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(
+          errorResponse(request.id, 'INVALID_REQUEST', 'The research task identifier is invalid.'),
+        );
+    }
+
+    try {
+      const task = await options.taskRepository.getOwnedTask(ownerId, parsed.data.taskId);
+      if (!task) {
+        return reply
+          .code(404)
+          .send(errorResponse(request.id, 'TASK_NOT_FOUND', 'Research task was not found.'));
+      }
+      return reply.code(200).send({ data: task, requestId: request.id });
+    } catch (error) {
+      request.log.error({ err: error }, 'Could not retrieve owner research task');
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+  });
+
+  app.delete('/v1/research-tasks/:taskId', async (request, reply) => {
+    const ownerId = requireHistoryOwner(request, reply);
+    if (!ownerId) return;
+    if (!options.taskRepository) {
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+    const parsed = taskIdParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(
+          errorResponse(request.id, 'INVALID_REQUEST', 'The research task identifier is invalid.'),
+        );
+    }
+
+    try {
+      const deleted = await options.taskRepository.deleteOwnedTask(ownerId, parsed.data.taskId);
+      if (!deleted) {
+        return reply
+          .code(404)
+          .send(errorResponse(request.id, 'TASK_NOT_FOUND', 'Research task was not found.'));
+      }
+      return reply.code(204).send();
+    } catch (error) {
+      request.log.error({ err: error }, 'Could not delete owner research task');
+      return reply
+        .code(503)
+        .send(
+          errorResponse(request.id, 'PERSISTENCE_UNAVAILABLE', 'Research history is unavailable.'),
+        );
+    }
+  });
 
   app.post('/v1/page-reads', async (request, reply) => {
     const parsed = pageReadRequestSchema.safeParse(request.body);

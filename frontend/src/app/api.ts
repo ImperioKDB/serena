@@ -1,4 +1,4 @@
-import type { ResearchApiResponse } from './types';
+import type { ResearchApiResponse, ResearchHistoryPage, ResearchTaskDetail } from './types';
 
 const DEFAULT_API_URL = 'https://serena-imperiokdbs-projects.vercel.app';
 
@@ -49,6 +49,76 @@ export async function submitResearch(input: {
   }
 
   return body;
+}
+
+async function responseError(response: Response): Promise<SerenaApiError> {
+  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+  return new SerenaApiError(
+    body?.error?.message ?? `Serena API returned HTTP ${response.status}.`,
+    response.status,
+  );
+}
+
+export async function listResearchHistory(input: {
+  apiUrl: string;
+  accessToken: string;
+  limit?: number;
+  offset?: number;
+  signal?: AbortSignal;
+}): Promise<ResearchHistoryPage> {
+  const query = new URLSearchParams({
+    limit: String(input.limit ?? 20),
+    offset: String(input.offset ?? 0),
+  });
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/u, '')}/v1/research-tasks?${query.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${input.accessToken}` },
+      signal: input.signal,
+    },
+  );
+  if (!response.ok) throw await responseError(response);
+  const body = (await response.json()) as { data?: ResearchHistoryPage };
+  if (!body.data || !Array.isArray(body.data.items)) {
+    throw new SerenaApiError('Serena returned invalid research history.', response.status);
+  }
+  return body.data;
+}
+
+export async function getResearchTask(input: {
+  apiUrl: string;
+  accessToken: string;
+  taskId: string;
+  signal?: AbortSignal;
+}): Promise<ResearchTaskDetail> {
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/u, '')}/v1/research-tasks/${encodeURIComponent(input.taskId)}`,
+    {
+      headers: { Authorization: `Bearer ${input.accessToken}` },
+      signal: input.signal,
+    },
+  );
+  if (!response.ok) throw await responseError(response);
+  const body = (await response.json()) as { data?: ResearchTaskDetail };
+  if (!body.data || body.data.id !== input.taskId) {
+    throw new SerenaApiError('Serena returned an invalid research task.', response.status);
+  }
+  return body.data;
+}
+
+export async function deleteResearchTask(input: {
+  apiUrl: string;
+  accessToken: string;
+  taskId: string;
+}): Promise<void> {
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/u, '')}/v1/research-tasks/${encodeURIComponent(input.taskId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${input.accessToken}` },
+    },
+  );
+  if (!response.ok) throw await responseError(response);
 }
 
 export function getDefaultApiUrl(): string {
