@@ -58,3 +58,27 @@ export interface ResearchApiResponse {
   requestId: string;
   taskId: string;
 }
+
+export type ResearchTaskStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface ResearchTaskSummary {
+  id: string;
+  status: ResearchTaskStatus;
+  requestText: string;
+  createdAt: string;
+  finishedAt: string | null;
+  errorCode: string | null;
+  sourceCount: number;
+  findingCount: number;
+}
+
+export interface ResearchTaskDetail extends ResearchTaskSummary {
+  result: unknown | null;
+}
+
+export interface ResearchHistoryPage {
+  items: ResearchTaskSummary[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}

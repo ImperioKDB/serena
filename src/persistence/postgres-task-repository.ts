@@ -10,9 +10,46 @@ import {
 import type {
   CreateEvidenceInput,
   CreateTaskInput,
+  ListOwnedTasksOptions,
+  ResearchTaskDetail,
   ResearchTaskRecord,
+  ResearchTaskSummary,
   TaskRepository,
 } from './task-repository.js';
+
+interface TaskHistoryRow {
+  id: string;
+  status: ResearchTaskSummary['status'];
+  requestText: string;
+  createdAt: Date | string;
+  finishedAt: Date | string | null;
+  errorCode: string | null;
+  sourceCount: number;
+  findingCount: number;
+  result?: unknown | null;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function toIsoString(value: Date | string | null): string | null {
+  if (value === null) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function toTaskSummary(row: TaskHistoryRow): ResearchTaskSummary {
+  const createdAt = toIsoString(row.createdAt);
+  if (!createdAt) throw new Error('A stored research task has no creation timestamp.');
+  return {
+    id: row.id,
+    status: row.status,
+    requestText: row.requestText,
+    createdAt,
+    finishedAt: toIsoString(row.finishedAt),
+    errorCode: row.errorCode,
+    sourceCount: row.sourceCount,
+    findingCount: row.findingCount,
+  };
+}
 
 export class PostgresTaskRepository implements TaskRepository, RequestAdmissionStore {
   private readonly sql: ReturnType<typeof postgres>;
@@ -41,6 +78,79 @@ export class PostgresTaskRepository implements TaskRepository, RequestAdmissionS
     }
 
     return task;
+  }
+
+  public async listOwnedTasks(
+    ownerId: string,
+    options: ListOwnedTasksOptions,
+  ): Promise<ResearchTaskSummary[]> {
+    const rows = await this.sql<TaskHistoryRow[]>`
+      select
+        id,
+        status,
+        request_text as "requestText",
+        created_at as "createdAt",
+        finished_at as "finishedAt",
+        error_code as "errorCode",
+        case
+          when jsonb_typeof(result_json -> 'sources') = 'array'
+          then jsonb_array_length(result_json -> 'sources')
+          else 0
+        end as "sourceCount",
+        case
+          when jsonb_typeof(result_json -> 'findings') = 'array'
+          then jsonb_array_length(result_json -> 'findings')
+          else 0
+        end as "findingCount"
+      from public.research_tasks
+      where owner_id = ${ownerId}::uuid
+      order by created_at desc, id desc
+      limit ${options.limit}
+      offset ${options.offset}
+    `;
+    return rows.map(toTaskSummary);
+  }
+
+  public async getOwnedTask(
+    ownerId: string,
+    taskId: string,
+  ): Promise<ResearchTaskDetail | undefined> {
+    if (!UUID_PATTERN.test(taskId)) return undefined;
+    const [row] = await this.sql<TaskHistoryRow[]>`
+      select
+        id,
+        status,
+        request_text as "requestText",
+        created_at as "createdAt",
+        finished_at as "finishedAt",
+        error_code as "errorCode",
+        case
+          when jsonb_typeof(result_json -> 'sources') = 'array'
+          then jsonb_array_length(result_json -> 'sources')
+          else 0
+        end as "sourceCount",
+        case
+          when jsonb_typeof(result_json -> 'findings') = 'array'
+          then jsonb_array_length(result_json -> 'findings')
+          else 0
+        end as "findingCount",
+        result_json as result
+      from public.research_tasks
+      where id = ${taskId}::uuid and owner_id = ${ownerId}::uuid
+      limit 1
+    `;
+    if (!row) return undefined;
+    return { ...toTaskSummary(row), result: row.result ?? null };
+  }
+
+  public async deleteOwnedTask(ownerId: string, taskId: string): Promise<boolean> {
+    if (!UUID_PATTERN.test(taskId)) return false;
+    const deleted = await this.sql<{ id: string }[]>`
+      delete from public.research_tasks
+      where id = ${taskId}::uuid and owner_id = ${ownerId}::uuid
+      returning id
+    `;
+    return deleted.length > 0;
   }
 
   public async recordSource(

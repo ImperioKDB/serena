@@ -170,6 +170,201 @@ describe('Serena API', () => {
     expect(repository.getTaskOwner(taskId)).toBe(ownerId);
   });
 
+  it('lists only the signed-in user’s tasks and paginates within that owner scope', async () => {
+    const aliceId = '6bffb79d-9f1d-41aa-91b9-75edb31ae70f';
+    const bobId = '97e5049e-76b3-4b44-8e47-4cb5e62054e0';
+    const repository = new InMemoryTaskRepository();
+    const authVerifier = async (token: string) => {
+      if (token === 'alice-session') return { id: aliceId };
+      if (token === 'bob-session') return { id: bobId };
+      return null;
+    };
+    app = createApp(
+      adapterFor(async (target) => ({ ...successfulResult, url: target })),
+      {
+        authVerifier,
+        taskRepository: repository,
+      },
+    );
+    const createTask = async (token: string, request: string): Promise<string> => {
+      const response = await app!.inject({
+        method: 'POST',
+        url: '/v1/research-tasks',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { request, sources: ['https://example.com/article'] },
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json().taskId as string;
+    };
+
+    const aliceTaskOne = await createTask('alice-session', 'Alice task one');
+    const bobTask = await createTask('bob-session', 'Bob private task');
+    const aliceTaskTwo = await createTask('alice-session', 'Alice task two');
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: '/v1/research-tasks?limit=1&offset=0',
+      headers: { authorization: 'Bearer alice-session' },
+    });
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: '/v1/research-tasks?limit=1&offset=1',
+      headers: { authorization: 'Bearer alice-session' },
+    });
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json().data.items).toHaveLength(1);
+    expect(firstPage.json().data.hasMore).toBe(true);
+    expect(secondPage.statusCode).toBe(200);
+    expect(secondPage.json().data.items).toHaveLength(1);
+    expect(secondPage.json().data.hasMore).toBe(false);
+    expect(
+      new Set([firstPage.json().data.items[0].id, secondPage.json().data.items[0].id]),
+    ).toEqual(new Set([aliceTaskOne, aliceTaskTwo]));
+    expect(JSON.stringify([firstPage.json().data, secondPage.json().data])).not.toContain(bobTask);
+    expect(firstPage.json().data.items[0]).not.toHaveProperty('result');
+  });
+
+  it('returns task details to their owner but returns the same 404 for another user', async () => {
+    const aliceId = '6bffb79d-9f1d-41aa-91b9-75edb31ae70f';
+    const bobId = '97e5049e-76b3-4b44-8e47-4cb5e62054e0';
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async (target) => ({ ...successfulResult, url: target })),
+      {
+        authVerifier: async (token) =>
+          token === 'alice-session'
+            ? { id: aliceId }
+            : token === 'bob-session'
+              ? { id: bobId }
+              : null,
+        taskRepository: repository,
+      },
+    );
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      headers: { authorization: 'Bearer alice-session' },
+      payload: { request: 'Alice research record', sources: ['https://example.com/article'] },
+    });
+    const taskId = created.json().taskId as string;
+
+    const ownerResponse = await app.inject({
+      method: 'GET',
+      url: `/v1/research-tasks/${taskId}`,
+      headers: { authorization: 'Bearer alice-session' },
+    });
+    const otherUserResponse = await app.inject({
+      method: 'GET',
+      url: `/v1/research-tasks/${taskId}`,
+      headers: { authorization: 'Bearer bob-session' },
+    });
+
+    expect(ownerResponse.statusCode).toBe(200);
+    expect(ownerResponse.json().data.id).toBe(taskId);
+    expect(ownerResponse.json().data.result.sources).toHaveLength(1);
+    expect(ownerResponse.json().data.result.evidence).toHaveLength(1);
+    expect(otherUserResponse.statusCode).toBe(404);
+    expect(otherUserResponse.json().error.code).toBe('TASK_NOT_FOUND');
+  });
+
+  it('deletes only the owner’s task and removes its dependent source and evidence records', async () => {
+    const aliceId = '6bffb79d-9f1d-41aa-91b9-75edb31ae70f';
+    const bobId = '97e5049e-76b3-4b44-8e47-4cb5e62054e0';
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async (target) => ({ ...successfulResult, url: target })),
+      {
+        authVerifier: async (token) =>
+          token === 'alice-session'
+            ? { id: aliceId }
+            : token === 'bob-session'
+              ? { id: bobId }
+              : null,
+        taskRepository: repository,
+      },
+    );
+    const createTask = async (token: string): Promise<string> => {
+      const response = await app!.inject({
+        method: 'POST',
+        url: '/v1/research-tasks',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { request: 'Delete test research', sources: ['https://example.com/article'] },
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json().taskId as string;
+    };
+    const aliceTask = await createTask('alice-session');
+    const bobTask = await createTask('bob-session');
+
+    const deniedDelete = await app.inject({
+      method: 'DELETE',
+      url: `/v1/research-tasks/${aliceTask}`,
+      headers: { authorization: 'Bearer bob-session' },
+    });
+    const ownerDelete = await app.inject({
+      method: 'DELETE',
+      url: `/v1/research-tasks/${aliceTask}`,
+      headers: { authorization: 'Bearer alice-session' },
+    });
+    const bobTaskDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/research-tasks/${bobTask}`,
+      headers: { authorization: 'Bearer bob-session' },
+    });
+
+    expect(deniedDelete.statusCode).toBe(404);
+    expect(ownerDelete.statusCode).toBe(204);
+    expect(repository.getTaskStatus(aliceTask)).toBeUndefined();
+    expect(repository.getSources(aliceTask)).toEqual([]);
+    expect(repository.getEvidence(aliceTask)).toEqual([]);
+    expect(bobTaskDetail.statusCode).toBe(200);
+  });
+
+  it('requires a Supabase user identity rather than a legacy API key for history', async () => {
+    const repository = new InMemoryTaskRepository();
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        apiKey: 'legacy-server-key',
+        taskRepository: repository,
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/research-tasks',
+      headers: { authorization: 'Bearer legacy-server-key' },
+    });
+    const anonymousResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/research-tasks',
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe('USER_AUTH_REQUIRED');
+    expect(anonymousResponse.statusCode).toBe(401);
+    expect(anonymousResponse.json().error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('rejects history pagination outside the documented bounds', async () => {
+    app = createApp(
+      adapterFor(async () => successfulResult),
+      {
+        authVerifier: async () => ({ id: '6bffb79d-9f1d-41aa-91b9-75edb31ae70f' }),
+        taskRepository: new InMemoryTaskRepository(),
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/research-tasks?limit=51&offset=0',
+      headers: { authorization: 'Bearer valid-session' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('INVALID_REQUEST');
+  });
+
   it('rejects over-capacity requests before starting a browser read', async () => {
     const readPage = vi.fn(async () => successfulResult);
     const acquireRequest = vi.fn(async () => 'concurrency_limited' as const);
@@ -219,9 +414,19 @@ describe('Serena API', () => {
         'access-control-request-method': 'POST',
       },
     });
+    const deletePreflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/research-tasks/example-task',
+      headers: {
+        origin: frontendOrigin,
+        'access-control-request-method': 'DELETE',
+        'access-control-request-headers': 'authorization',
+      },
+    });
 
     expect(allowed.headers['access-control-allow-origin']).toBe(frontendOrigin);
     expect(unlisted.headers['access-control-allow-origin']).toBeUndefined();
+    expect(deletePreflight.headers['access-control-allow-methods']).toContain('DELETE');
   });
 
   it('returns the structured page-read result', async () => {

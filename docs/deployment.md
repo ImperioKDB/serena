@@ -28,6 +28,14 @@ Automatic discovery sends the user's research query to the configured search pro
 
 The frontend's `VITE_SERENA_API_URL` is a public API base URL, not a secret. The frontend obtains a Google-authenticated Supabase session and sends its access token as a bearer token; the API verifies it with Supabase before processing the request. The SDK uses PKCE and `sessionStorage` (rather than long-lived `localStorage`) for this browser prototype. Google client secrets belong only in Supabase Auth provider settings, never in Serena or Vercel frontend variables. Existing server-to-server callers using `SERENA_API_KEY` remain supported, but tasks created through that legacy path have no verified user owner. Follow [Google sign-in setup](./google-auth-setup.md) to finish provider configuration.
 
+## User-owned research history
+
+- `GET /v1/research-tasks?limit=20&offset=0` returns a bounded, newest-first page of the authenticated user's task summaries (`limit` 1–50; `offset` 0–10,000) and a `hasMore` flag. Results are not included in list rows.
+- `GET /v1/research-tasks/:taskId` returns the full saved task result only when `owner_id` matches the verified Supabase user.
+- `DELETE /v1/research-tasks/:taskId` permanently deletes only a task owned by the verified user. Existing foreign keys cascade this deletion to sources, evidence, and execution events. An unknown task and another user's task both return the same 404 response.
+- These routes require a Supabase-authenticated user identity; the legacy `SERENA_API_KEY` cannot access user history. The API applies owner filters in SQL and does not rely on RLS because its database connection is privileged.
+- No additional migration is needed: the owner column/index and cascading task/source/evidence/event relationships are already present.
+
 ## Browser and request budgets
 
 The browser rejects non-HTTPS targets by default (with a loopback-only HTTP exception for local fixtures), credentials in URLs, non-default HTTPS ports, private/special-purpose IP literals and DNS answers, and hosts outside an optional domain allowlist. For each HTTP request, Serena resolves DNS once, rejects the target if any answer is private/reserved, then opens a direct socket to a vetted answer while preserving the requested Host header and TLS server name. Redirect hops use this same guarded client and are limited to five. In-page requests also pass through the same pinned client; no automatic redirect is followed. Chromium service-worker network interception is bypassed so worker-fulfilled requests remain visible to Playwright routes.
