@@ -552,6 +552,10 @@ export function createApp(
       });
     } catch (error) {
       if (error instanceof SearchProvidersUnavailableError) {
+        request.log.warn(
+          { providerFailures: error.failures },
+          'All configured search providers failed',
+        );
         return reply
           .code(503)
           .send(

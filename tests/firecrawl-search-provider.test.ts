@@ -65,12 +65,34 @@ describe('FirecrawlSearchProvider', () => {
     await new FirecrawlSearchProvider('free-tier-key').search('query');
   });
 
-  it('surfaces a 429 as a provider failure so the chain can use its next provider', async () => {
+  it('classifies HTTP failures by status without retaining the upstream body', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('limited', { status: 429 })),
+      vi.fn(async () => new Response('secret upstream detail', { status: 429 })),
     );
 
-    await expect(new FirecrawlSearchProvider().search('query')).rejects.toThrow('HTTP 429');
+    await expect(new FirecrawlSearchProvider().search('query')).rejects.toMatchObject({
+      provider: 'firecrawl',
+      kind: 'upstream_http_error',
+      statusCode: 429,
+    });
+    await expect(new FirecrawlSearchProvider().search('query')).rejects.not.toThrow(
+      'secret upstream detail',
+    );
+  });
+
+  it('classifies malformed success responses without including response content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('private response', { status: 200 })),
+    );
+
+    await expect(new FirecrawlSearchProvider().search('query')).rejects.toMatchObject({
+      provider: 'firecrawl',
+      kind: 'invalid_response',
+    });
+    await expect(new FirecrawlSearchProvider().search('query')).rejects.not.toThrow(
+      'private response',
+    );
   });
 });

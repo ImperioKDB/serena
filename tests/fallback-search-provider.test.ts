@@ -4,7 +4,11 @@ import {
   FallbackSearchProvider,
   SearchProvidersUnavailableError,
 } from '../src/search/fallback-search-provider.js';
-import type { SearchProvider, SearchProviderResponse } from '../src/search/search-provider.js';
+import {
+  SearchProviderError,
+  type SearchProvider,
+  type SearchProviderResponse,
+} from '../src/search/search-provider.js';
 
 function provider(name: string, search: SearchProvider['search']): SearchProvider {
   return { name, search };
@@ -41,14 +45,29 @@ describe('FallbackSearchProvider', () => {
   });
 
   it('throws a sanitized unavailable error only when every provider fails', async () => {
-    const first = provider('firecrawl', vi.fn().mockRejectedValue(new Error('private detail')));
+    const first = provider(
+      'firecrawl',
+      vi.fn().mockRejectedValue(new SearchProviderError('firecrawl', 'upstream_http_error', 429)),
+    );
     const second = provider('tavily', vi.fn().mockRejectedValue(new Error('secret detail')));
 
-    await expect(new FallbackSearchProvider([first, second]).search('query')).rejects.toThrow(
-      SearchProvidersUnavailableError,
-    );
-    await expect(new FallbackSearchProvider([first, second]).search('query')).rejects.not.toThrow(
-      'private detail',
-    );
+    await expect(
+      new FallbackSearchProvider([first, second]).search('private query'),
+    ).rejects.toMatchObject({
+      name: 'SearchProvidersUnavailableError',
+      failures: [
+        { provider: 'firecrawl', kind: 'upstream_http_error', statusCode: 429 },
+        { provider: 'tavily', kind: 'unknown' },
+      ],
+    });
+    await expect(
+      new FallbackSearchProvider([first, second]).search('private query'),
+    ).rejects.not.toThrow('secret detail');
+    await expect(
+      new FallbackSearchProvider([first, second]).search('private query'),
+    ).rejects.not.toThrow('private query');
+    await expect(
+      new FallbackSearchProvider([first, second]).search('private query'),
+    ).rejects.toBeInstanceOf(SearchProvidersUnavailableError);
   });
 });

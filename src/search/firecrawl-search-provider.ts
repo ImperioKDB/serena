@@ -1,4 +1,9 @@
-import type { SearchCandidate, SearchProvider, SearchProviderResponse } from './search-provider.js';
+import {
+  SearchProviderError,
+  type SearchCandidate,
+  type SearchProvider,
+  type SearchProviderResponse,
+} from './search-provider.js';
 
 const FIRECRAWL_SEARCH_URL = 'https://api.firecrawl.dev/v2/search';
 const MAX_RESULTS = 10;
@@ -14,7 +19,11 @@ export class FirecrawlSearchProvider implements SearchProvider {
   ): Promise<SearchProviderResponse> {
     const limit = Math.max(1, Math.min(options.maxResults ?? MAX_RESULTS, MAX_RESULTS));
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 5_000);
     const abortFromCaller = () => controller.abort(options.signal?.reason);
     options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
@@ -29,12 +38,17 @@ export class FirecrawlSearchProvider implements SearchProvider {
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`Firecrawl search returned HTTP ${response.status}.`);
+        throw new SearchProviderError(this.name, 'upstream_http_error', response.status);
       }
 
-      const payload: unknown = await response.json();
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new SearchProviderError(this.name, 'invalid_response');
+      }
       if (!isRecord(payload) || !isRecord(payload.data) || !Array.isArray(payload.data.web)) {
-        throw new Error('Firecrawl search returned an invalid response.');
+        throw new SearchProviderError(this.name, 'invalid_response');
       }
 
       const candidates: SearchCandidate[] = [];
@@ -60,6 +74,9 @@ export class FirecrawlSearchProvider implements SearchProvider {
       }
 
       return { provider: this.name, candidates };
+    } catch (error) {
+      if (error instanceof SearchProviderError) throw error;
+      throw new SearchProviderError(this.name, timedOut ? 'timeout' : 'network_error');
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener('abort', abortFromCaller);

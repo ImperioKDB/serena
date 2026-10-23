@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import Fastify from 'fastify';
 
 import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { createApp } from '../src/api/app.js';
@@ -713,17 +714,21 @@ describe('Serena API', () => {
     expect(response.json().error.code).toBe('SEARCH_UNAVAILABLE');
   });
 
-  it('returns a safe temporary-unavailable response when every search provider is throttled', async () => {
+  it('logs redacted provider diagnostics and returns a safe temporary-unavailable response', async () => {
     const repository = new InMemoryTaskRepository();
+    const logLines: string[] = [];
     const searchProvider: SearchProvider = {
       name: 'fallback',
       search: async () => {
-        throw new SearchProvidersUnavailableError();
+        throw new SearchProvidersUnavailableError([
+          { provider: 'firecrawl', kind: 'upstream_http_error', statusCode: 403 },
+        ]);
       },
     };
     app = createApp(
       adapterFor(async () => successfulResult),
       { taskRepository: repository, searchProvider },
+      Fastify({ logger: { stream: { write: (line: string) => logLines.push(line) } } }),
     );
 
     const response = await app.inject({
@@ -735,6 +740,14 @@ describe('Serena API', () => {
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe('SEARCH_UNAVAILABLE');
     expect(response.body).not.toContain('upstream');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const warning = logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.msg === 'All configured search providers failed');
+    expect(warning).toMatchObject({
+      providerFailures: [{ provider: 'firecrawl', kind: 'upstream_http_error', statusCode: 403 }],
+    });
+    expect(JSON.stringify(warning)).not.toContain('Search for current information.');
   });
 
   it('maps browser errors without leaking internal details', async () => {
