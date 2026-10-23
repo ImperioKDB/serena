@@ -93,7 +93,12 @@ async function readBoundedBody(
   const contentLength = Number(response.headers['content-length']);
   if (Number.isFinite(contentLength) && contentLength > maxResponseBytes) {
     response.destroy();
-    throw new BrowserReadError('RESPONSE_TOO_LARGE', 'The page exceeded its response-size budget.');
+    throw new BrowserReadError(
+      'RESPONSE_TOO_LARGE',
+      'The page exceeded its response-size budget.',
+      undefined,
+      'resource',
+    );
   }
 
   let receivedBytes = 0;
@@ -102,7 +107,12 @@ async function readBoundedBody(
       receivedBytes += chunk.length;
       if (receivedBytes > maxResponseBytes) {
         callback(
-          new BrowserReadError('RESPONSE_TOO_LARGE', 'The page exceeded its response-size budget.'),
+          new BrowserReadError(
+            'RESPONSE_TOO_LARGE',
+            'The page exceeded its response-size budget.',
+            undefined,
+            'resource',
+          ),
         );
         return;
       }
@@ -128,6 +138,8 @@ async function readBoundedBody(
         throw new BrowserReadError(
           'RESPONSE_TOO_LARGE',
           'The page exceeded its response-size budget.',
+          undefined,
+          'resource',
         );
       }
       chunks.push(buffer);

@@ -31,6 +31,8 @@ export class PlaywrightBrowserAdapter implements BrowserAdapter {
 
       try {
         await page.goto(resolvedTarget.toString(), { waitUntil: 'domcontentloaded' });
+        const policyError = requestGuard.getPolicyError();
+        if (policyError) throw policyError;
         const title = await page.title();
         const text = await page
           .locator('body')

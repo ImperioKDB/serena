@@ -6,6 +6,8 @@ export type BrowserReadErrorCode =
   | 'REQUEST_BUDGET_EXCEEDED'
   | 'READ_FAILED';
 
+export type ResponseSizeLimitScope = 'resource' | 'page';
+
 export interface BrowserReadResult {
   url: string;
   finalUrl: string;
@@ -18,11 +20,18 @@ export interface BrowserReadResult {
 export class BrowserReadError extends Error {
   public readonly code: BrowserReadErrorCode;
   public readonly target: string | undefined;
+  public readonly responseSizeLimitScope: ResponseSizeLimitScope | undefined;
 
-  public constructor(code: BrowserReadErrorCode, message: string, target?: string) {
+  public constructor(
+    code: BrowserReadErrorCode,
+    message: string,
+    target?: string,
+    responseSizeLimitScope?: ResponseSizeLimitScope,
+  ) {
     super(message);
     this.name = 'BrowserReadError';
     this.code = code;
     this.target = target;
+    this.responseSizeLimitScope = responseSizeLimitScope;
   }
 }

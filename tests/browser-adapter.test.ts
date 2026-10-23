@@ -33,6 +33,24 @@ beforeAll(async () => {
       return;
     }
 
+    if (request.url === '/oversized-script-page') {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(
+        '<!doctype html><title>Oversized subresource</title><script src="/oversized-script.js"></script>',
+      );
+      return;
+    }
+
+    if (request.url === '/oversized-script.js') {
+      const body = Buffer.alloc(2 * 1024 * 1024 + 1, 'x');
+      response.writeHead(200, {
+        'content-type': 'text/javascript',
+        'content-length': String(body.byteLength),
+      });
+      response.end(body);
+      return;
+    }
+
     response.writeHead(200, { 'content-type': 'text/html' });
     response.end(fixture);
   });
@@ -64,6 +82,17 @@ describe('PlaywrightBrowserAdapter', () => {
     expect(result.finalUrl).toBe(`${baseUrl}/article`);
     expect(result.retrievedAt).toMatch(/Z$/);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('propagates a size-limit failure from a blocked subresource with its classification', async () => {
+    const adapter = new PlaywrightBrowserAdapter();
+
+    await expect(
+      adapter.readPage(`${baseUrl}/oversized-script-page`, { allowLocalHttp: true }),
+    ).rejects.toMatchObject({
+      code: 'RESPONSE_TOO_LARGE',
+      responseSizeLimitScope: 'resource',
+    });
   });
 
   it('records the final URL after a redirect', async () => {

@@ -534,6 +534,16 @@ export function createApp(
         options.taskRepository,
         options.claimExtractor,
         options.searchProvider,
+        (diagnostic) => {
+          if (diagnostic.code !== 'RESPONSE_TOO_LARGE') return;
+          request.log.warn(
+            {
+              errorCode: diagnostic.code,
+              responseSizeLimitScope: diagnostic.responseSizeLimitScope ?? 'unknown',
+            },
+            'Research source skipped due to response-size budget',
+          );
+        },
       );
       const execution = await service.run({
         request: parsed.data.request,

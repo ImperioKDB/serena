@@ -113,6 +113,8 @@ export async function installRequestGuard(
         throw new BrowserReadError(
           'RESPONSE_TOO_LARGE',
           'Page exceeded its total response-size budget.',
+          undefined,
+          'page',
         );
       }
       byteReservation = Math.min(MAX_RESPONSE_BYTES, remainingPageBytes);
@@ -152,12 +154,21 @@ export async function installRequestGuard(
         body: response.body,
       });
     } catch (error) {
-      if (
-        error instanceof BrowserReadError &&
-        (error.code === 'INVALID_TARGET' || error.code === 'RESPONSE_TOO_LARGE') &&
-        policyError === undefined
-      ) {
-        policyError = error;
+      if (error instanceof BrowserReadError && policyError === undefined) {
+        if (error.code === 'INVALID_TARGET') {
+          policyError = error;
+        } else if (error.code === 'RESPONSE_TOO_LARGE') {
+          const responseSizeLimitScope =
+            byteReservation > 0 && byteReservation < MAX_RESPONSE_BYTES
+              ? 'page'
+              : (error.responseSizeLimitScope ?? 'resource');
+          policyError = new BrowserReadError(
+            error.code,
+            error.message,
+            undefined,
+            responseSizeLimitScope,
+          );
+        }
       }
       if (byteReservation > 0 && !reservationConsumed) {
         // A response that exceeded the cap consumed at least its full allowance;

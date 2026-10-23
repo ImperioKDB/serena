@@ -86,12 +86,16 @@ describe('IP-pinned bounded HTTP fetch', () => {
   });
 
   it('rejects a response when Content-Length exceeds the budget', async () => {
-    await expect(get('/oversized', 16)).rejects.toMatchObject({ code: 'RESPONSE_TOO_LARGE' });
+    await expect(get('/oversized', 16)).rejects.toMatchObject({
+      code: 'RESPONSE_TOO_LARGE',
+      responseSizeLimitScope: 'resource',
+    });
   });
 
   it('rejects a chunked response when streamed bytes exceed the budget', async () => {
     await expect(get('/chunked-oversized', 16)).rejects.toMatchObject({
       code: 'RESPONSE_TOO_LARGE',
+      responseSizeLimitScope: 'resource',
     });
   });
 

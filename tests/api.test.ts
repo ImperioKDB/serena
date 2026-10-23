@@ -750,6 +750,50 @@ describe('Serena API', () => {
     expect(JSON.stringify(warning)).not.toContain('Search for current information.');
   });
 
+  it('logs response-size scope without recording the research query or candidate URL', async () => {
+    const logLines: string[] = [];
+    const researchQuery = 'private diagnostic query 24f8b6';
+    const candidateUrl = 'https://candidate.example/private-path-24f8b6';
+    const searchProvider: SearchProvider = {
+      name: 'firecrawl',
+      search: async () => ({
+        provider: 'firecrawl',
+        candidates: [{ url: candidateUrl, title: 'Private candidate', rank: 1 }],
+      }),
+    };
+    app = createApp(
+      adapterFor(async (target) => {
+        throw new BrowserReadError(
+          'RESPONSE_TOO_LARGE',
+          'Internal size-limit detail.',
+          target,
+          'page',
+        );
+      }),
+      { taskRepository: new InMemoryTaskRepository(), searchProvider },
+      Fastify({ logger: { stream: { write: (line: string) => logLines.push(line) } } }),
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/research-tasks',
+      payload: { request: researchQuery, sourceMode: 'discover' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const warning = logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.msg === 'Research source skipped due to response-size budget');
+    expect(warning).toMatchObject({
+      errorCode: 'RESPONSE_TOO_LARGE',
+      responseSizeLimitScope: 'page',
+    });
+    expect(JSON.stringify(warning)).not.toContain(researchQuery);
+    expect(JSON.stringify(warning)).not.toContain(candidateUrl);
+    expect(JSON.stringify(warning)).not.toContain('Internal size-limit detail.');
+  });
+
   it('maps browser errors without leaking internal details', async () => {
     const readPage = async () => {
       throw new BrowserReadError(

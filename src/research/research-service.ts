@@ -1,5 +1,5 @@
 import type { BrowserAdapter, BrowserReadOptions } from '../browser/browser-adapter.js';
-import { BrowserReadError } from '../core/result.js';
+import { BrowserReadError, type ResponseSizeLimitScope } from '../core/result.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from './claim-extractor.js';
 import { extractCrossSourceFindings } from './finding-extractor.js';
@@ -21,12 +21,18 @@ export interface ResearchServiceInput {
   allowedDomains?: string[];
 }
 
+export interface SourceReadFailureDiagnostic {
+  code: BrowserReadError['code'];
+  responseSizeLimitScope?: ResponseSizeLimitScope;
+}
+
 export class ResearchService {
   public constructor(
     private readonly adapter: BrowserAdapter,
     private readonly repository: TaskRepository,
     private readonly claimExtractor?: ClaimExtractor,
     private readonly searchProvider?: SearchProvider,
+    private readonly onSourceReadFailure?: (diagnostic: SourceReadFailureDiagnostic) => void,
   ) {}
 
   public async run(
@@ -103,6 +109,16 @@ export class ResearchService {
               error.code === 'RESPONSE_TOO_LARGE')
           ) {
             unreadableSourceCount += 1;
+            try {
+              this.onSourceReadFailure?.({
+                code: error.code,
+                ...(error.responseSizeLimitScope === undefined
+                  ? {}
+                  : { responseSizeLimitScope: error.responseSizeLimitScope }),
+              });
+            } catch {
+              // Diagnostics must not interrupt an otherwise recoverable research run.
+            }
             await this.repository.appendEvent(task.id, 'source_unreadable', {
               url: sourceUrl,
               reason: error.code,
