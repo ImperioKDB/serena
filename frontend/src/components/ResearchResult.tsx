@@ -45,8 +45,9 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
           ) : unreadableSourceCount > 0 ? (
             <span>
               {unreadableSourceCount} discovered page{unreadableSourceCount === 1 ? '' : 's'} did
-              not respond or denied access. Serena skipped them and did not attempt to bypass any
-              checks. The remaining readable pages may not represent the full set of opportunities.
+              not respond, denied access, or exceeded a safety limit. Serena skipped them and did
+              not attempt to bypass any checks. The remaining readable pages may not represent the
+              full set of opportunities.
             </span>
           ) : (
             <span>

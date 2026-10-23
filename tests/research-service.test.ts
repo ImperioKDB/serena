@@ -129,6 +129,59 @@ describe('research service discovery', () => {
     expect(result.evidence).toHaveLength(1);
   });
 
+  it('skips a source that exceeds the response-size budget and continues within the candidate cap', async () => {
+    const repository = new InMemoryTaskRepository();
+    const attempted: string[] = [];
+    const claimExtractor: ClaimExtractor = { extract: vi.fn(async () => []) };
+    const service = new ResearchService(
+      adapterFor(async (url) => {
+        attempted.push(url);
+        if (url.endsWith('/oversized')) {
+          throw new BrowserReadError(
+            'RESPONSE_TOO_LARGE',
+            'Page exceeded response-size limit.',
+            url,
+          );
+        }
+        return page(url, 'Accessible statistics appear on this readable page.');
+      }),
+      repository,
+      claimExtractor,
+      {
+        name: 'mock',
+        search: async () => ({
+          provider: 'mock',
+          candidates: [
+            { url: 'https://example.com/oversized', title: 'Large page', rank: 1 },
+            { url: 'https://example.org/readable', title: 'Readable page', rank: 2 },
+          ],
+        }),
+      },
+    );
+
+    const { taskId, result } = await service.run({
+      request: 'Compare football players using public statistics.',
+      sourceMode: 'discover',
+    });
+
+    expect(attempted).toEqual(['https://example.com/oversized', 'https://example.org/readable']);
+    expect(result.discovery).toEqual({
+      provider: 'mock',
+      candidateCount: 2,
+      attemptedCount: 2,
+    });
+    expect(result.coverage).toEqual({
+      status: 'incomplete',
+      securityChallengeSourceCount: 0,
+      unreadableSourceCount: 1,
+    });
+    expect(result.sources).toHaveLength(1);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]?.excerpt).toContain('Accessible statistics');
+    expect(repository.getEvidence(taskId)).toHaveLength(1);
+    expect(claimExtractor.extract).not.toHaveBeenCalled();
+  });
+
   it('marks an empty candidate list as incomplete instead of a negative finding', async () => {
     const service = new ResearchService(
       adapterFor(async () => page('https://example.com', 'unused')),

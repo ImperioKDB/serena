@@ -98,7 +98,9 @@ export class ResearchService {
           if (
             discovery &&
             error instanceof BrowserReadError &&
-            (error.code === 'NAVIGATION_FAILED' || error.code === 'NAVIGATION_TIMEOUT')
+            (error.code === 'NAVIGATION_FAILED' ||
+              error.code === 'NAVIGATION_TIMEOUT' ||
+              error.code === 'RESPONSE_TOO_LARGE')
           ) {
             unreadableSourceCount += 1;
             await this.repository.appendEvent(task.id, 'source_unreadable', {
