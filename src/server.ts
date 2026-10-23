@@ -11,11 +11,16 @@ import {
   assertProductionSupabaseAuth,
 } from './core/runtime-config.js';
 import { createSupabaseAuthVerifier } from './api/supabase-auth.js';
+import { createSearchProvider } from './search/create-search-provider.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 const legacyApiKey = process.env.SERENA_API_KEY;
+const searchProvider = createSearchProvider({
+  firecrawlApiKey: process.env.FIRECRAWL_API_KEY,
+  tavilyApiKey: process.env.TAVILY_API_KEY,
+});
 assertProductionSupabaseAuth(supabaseUrl, supabasePublishableKey);
 const corsOrigins = (process.env.SERENA_CORS_ORIGINS ?? '')
   .split(',')
@@ -48,6 +53,7 @@ const app = createApp(
     ...(corsOrigins.length === 0 ? {} : { corsOrigins }),
     requestAdmission: taskRepository,
     taskRepository,
+    searchProvider,
     ...(claimExtractor === undefined ? {} : { claimExtractor }),
   },
   Fastify({ logger: true, bodyLimit: 64 * 1024, requestTimeout: 15_000 }),
