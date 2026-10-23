@@ -1,12 +1,20 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import type { Session } from '@supabase/supabase-js';
-
 import { getDefaultApiUrl, SerenaApiError, submitResearch } from './api';
 import { formatOAuthCallbackError, readOAuthCallbackState } from './oauth-callback.js';
 import { getSupabaseClient } from './supabase';
 import type { ResearchResult } from './types';
 import { ResearchComposer, type ResearchComposerValues } from '../components/ResearchComposer';
 import { ResearchResult as ResearchResultView } from '../components/ResearchResult';
+
+type Theme = 'light' | 'dark';
+const sections = [
+  { name: 'Research', icon: '⌕', available: true },
+  { name: 'History', icon: '◷', available: false },
+  { name: 'Knowledge', icon: '▤', available: false },
+  { name: 'Memory', icon: '⌘', available: false },
+  { name: 'Connections', icon: '↗', available: false },
+] as const;
 
 export function App(): ReactElement {
   const [oauthCallbackState] = useState(() =>
@@ -24,6 +32,13 @@ export function App(): ReactElement {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRequest, setLastRequest] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   useEffect(() => {
     if (!supabase) {
@@ -97,7 +112,6 @@ export function App(): ReactElement {
     setError(null);
     setResult(null);
     setLastRequest(values.request);
-
     try {
       const response = await submitResearch({
         apiUrl,
@@ -118,7 +132,7 @@ export function App(): ReactElement {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <aside className="sidebar" aria-label="Main navigation">
         <a className="wordmark" href="/" aria-label="Serena home">
           <span className="wordmark__mark" aria-hidden="true">
             <i />
@@ -127,114 +141,204 @@ export function App(): ReactElement {
           </span>
           <span>Serena</span>
         </a>
-        <div className="topbar__actions">
-          <div className="topbar__status">
-            <span className="status-dot" /> Evidence-first research
-          </div>
-          {session ? (
+        <nav className="sidebar__nav">
+          {sections.map((section) => (
             <button
-              className="secondary-button topbar__signout"
+              className={`nav-item${section.available ? ' nav-item--active' : ''}`}
               type="button"
-              onClick={signOut}
-              disabled={authBusy}
+              key={section.name}
+              disabled={!section.available}
+              aria-current={section.available ? 'page' : undefined}
+              aria-label={
+                section.available ? section.name : `${section.name}, planned and unavailable`
+              }
+              title={
+                section.available ? section.name : `${section.name} is planned, not available yet`
+              }
             >
-              Sign out
+              <span className="nav-item__icon" aria-hidden="true">
+                {section.icon}
+              </span>
+              <span>{section.name}</span>
+              {!section.available ? <span className="nav-item__soon">Planned</span> : null}
             </button>
-          ) : null}
+          ))}
+        </nav>
+        <div className="sidebar__account">
+          {session ? (
+            <>
+              <div className="account-label">
+                <span className="account-avatar" aria-hidden="true">
+                  {(session.user.email ?? 'S')[0]?.toUpperCase()}
+                </span>
+                <span className="account-label__text">
+                  <strong>{session.user.email ?? 'Google account'}</strong>
+                  <small>Signed in</small>
+                </span>
+              </div>
+              <button
+                className="secondary-button sidebar__signout"
+                type="button"
+                onClick={signOut}
+                disabled={authBusy}
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <span className="account-label__text">
+              <strong>Private workspace</strong>
+              <small>Sign in to research</small>
+            </span>
+          )}
         </div>
-      </header>
+      </aside>
 
-      <main className="research-rail">
-        <section className="hero-copy">
-          <p className="eyebrow">Personal intelligence layer</p>
-          <h1>Turn public sources into findings you can trace.</h1>
-          <p className="hero-copy__body">
-            Serena reads the sources you provide, preserves the excerpts it used, and keeps
-            uncertainty visible.
-          </p>
-        </section>
+      <div className="workspace">
+        <header className="topbar">
+          <a className="wordmark wordmark--mobile" href="/" aria-label="Serena home">
+            <span className="wordmark__mark" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>Serena</span>
+          </a>
+          <div className="topbar__actions">
+            <span className="topbar__status">Evidence-first research</span>
+            <button
+              className="theme-toggle"
+              type="button"
+              onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+            >
+              <span aria-hidden="true">{theme === 'light' ? '☾' : '☼'}</span>
+            </button>
+            {session ? (
+              <>
+                <span className="topbar__identity">{session.user.email ?? 'Signed in'}</span>
+                <button
+                  className="secondary-button topbar__signout"
+                  type="button"
+                  onClick={signOut}
+                  disabled={authBusy}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : null}
+          </div>
+        </header>
 
-        {authLoading ? (
-          <section className="loading-panel" aria-live="polite">
-            Checking your sign-in session…
-          </section>
-        ) : !supabase ? (
-          <section className="composer-card auth-card" role="status">
-            <p className="eyebrow">Sign-in setup required</p>
-            <h2>Serena authentication is not configured.</h2>
+        <nav className="mobile-nav" aria-label="Workspace sections">
+          {sections.map((section) => (
+            <button
+              className={`mobile-nav__item${section.available ? ' mobile-nav__item--active' : ''}`}
+              type="button"
+              key={section.name}
+              disabled={!section.available}
+              aria-current={section.available ? 'page' : undefined}
+              aria-label={
+                section.available ? section.name : `${section.name}, planned and unavailable`
+              }
+              title={
+                section.available ? section.name : `${section.name} is planned, not available yet`
+              }
+            >
+              <span aria-hidden="true">{section.icon}</span>
+              {section.name === 'Connections' ? 'Connect' : section.name}
+            </button>
+          ))}
+        </nav>
+
+        <main className="research-rail">
+          <section className="page-heading">
+            <p className="eyebrow">Research</p>
+            <h1>Investigate a question. Trace the evidence.</h1>
             <p>
-              Set the public Supabase project URL and publishable key in the frontend deployment.
+              Research public sources, review what supports each finding, and keep uncertainty
+              visible.
             </p>
           </section>
-        ) : !session ? (
-          <section className="composer-card auth-card">
-            <p className="eyebrow">Private access</p>
-            <h2>Sign in to Serena</h2>
-            <p>Use your Google account. Serena keeps the sign-in session in this browser tab.</p>
-            {authError ? (
-              <p className="form-error" role="alert">
-                {authError}
+          {authLoading ? (
+            <section className="loading-panel" aria-live="polite">
+              Checking your sign-in session…
+            </section>
+          ) : !supabase ? (
+            <section className="composer-card auth-card" role="status">
+              <p className="eyebrow">Sign-in setup required</p>
+              <h2>Serena authentication is not configured.</h2>
+              <p>
+                Set the public Supabase project URL and publishable key in the frontend deployment.
               </p>
-            ) : null}
-            <button
-              className="primary-button auth-card__button"
-              type="button"
-              onClick={signInWithGoogle}
-              disabled={authBusy}
-            >
-              {authBusy ? 'Opening Google…' : 'Continue with Google'}
-            </button>
-          </section>
-        ) : (
-          <>
-            <p className="signed-in-note">Signed in as {session.user.email ?? 'Google account'}</p>
-            <ResearchComposer
-              apiUrl={apiUrl}
-              disabled={isSubmitting || authBusy}
-              onSubmit={handleSubmit}
-            />
-          </>
-        )}
-
-        {isSubmitting ? (
-          <section className="loading-panel" aria-live="polite">
-            <div className="loading-orbit" aria-hidden="true">
-              <span />
-            </div>
-            <div>
-              <strong>Reading your sources…</strong>
-              <span>Serena is collecting evidence before making a finding.</span>
-            </div>
-          </section>
-        ) : null}
-
-        {error ? (
-          <section className="error-panel" role="alert">
-            <div>
-              <strong>Research did not complete.</strong>
-              <span>{error}</span>
-            </div>
-            <button className="secondary-button" type="button" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          </section>
-        ) : null}
-
-        {result ? (
-          <>
-            <div className="request-summary">
-              <span>Last request</span>
-              <strong>{lastRequest}</strong>
-            </div>
-            <ResearchResultView result={result} />
-          </>
-        ) : null}
-      </main>
-
-      <footer className="site-footer">
-        <span>Serena keeps every finding connected to evidence.</span>
-        <span>Private prototype</span>
-      </footer>
+            </section>
+          ) : !session ? (
+            <section className="composer-card auth-card">
+              <p className="eyebrow">Private access</p>
+              <h2>Sign in to Serena</h2>
+              <p>Use your Google account. Serena keeps the sign-in session in this browser tab.</p>
+              {authError ? (
+                <p className="form-error" role="alert">
+                  {authError}
+                </p>
+              ) : null}
+              <button
+                className="primary-button auth-card__button"
+                type="button"
+                onClick={signInWithGoogle}
+                disabled={authBusy}
+              >
+                {authBusy ? 'Opening Google…' : 'Continue with Google'}
+              </button>
+            </section>
+          ) : (
+            <ResearchComposer disabled={isSubmitting || authBusy} onSubmit={handleSubmit} />
+          )}
+          {isSubmitting ? (
+            <section className="loading-panel" aria-live="polite">
+              <span className="loading-mark" aria-hidden="true" />
+              <div>
+                <strong>Research in progress</strong>
+                <span>
+                  Serena is reading accessible pages and preparing evidence. This can take a little
+                  while.
+                </span>
+              </div>
+            </section>
+          ) : null}
+          {error ? (
+            <section className="error-panel" role="alert">
+              <div>
+                <strong>Research did not complete.</strong>
+                <span>{error}</span>
+              </div>
+              <button className="secondary-button" type="button" onClick={() => setError(null)}>
+                Dismiss
+              </button>
+            </section>
+          ) : null}
+          {result ? (
+            <>
+              <div className="request-summary">
+                <span>Research question</span>
+                <strong>{lastRequest}</strong>
+              </div>
+              <ResearchResultView result={result} />
+            </>
+          ) : null}
+          {!result && !isSubmitting ? (
+            <p className="research-guidance">
+              Findings are not always verified facts. Check the evidence, source context, and review
+              status before relying on them.
+            </p>
+          ) : null}
+        </main>
+        <footer className="site-footer">
+          <span>Serena keeps findings connected to their evidence.</span>
+          <span>Research workspace</span>
+        </footer>
+      </div>
     </div>
   );
 }

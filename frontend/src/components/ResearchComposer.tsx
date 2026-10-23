@@ -7,11 +7,9 @@ export interface ResearchComposerValues {
 }
 
 export function ResearchComposer({
-  apiUrl,
   disabled,
   onSubmit,
 }: {
-  apiUrl: string;
   disabled: boolean;
   onSubmit: (values: ResearchComposerValues) => void;
 }): ReactElement {
@@ -33,6 +31,10 @@ export function ResearchComposer({
     }
     if (sourceMode === 'provided' && sources.length === 0) {
       setError('Add at least one public HTTPS source URL.');
+      return;
+    }
+    if (sourceMode === 'provided' && sources.length > 5) {
+      setError('Provide no more than five source URLs.');
       return;
     }
     if (sourceMode === 'provided' && sources.some((source) => !/^https:\/\/\S+$/u.test(source))) {
@@ -113,7 +115,6 @@ export function ResearchComposer({
         </p>
       ) : null}
       <div className="composer-card__footer">
-        <span className="api-note">API: {apiUrl}</span>
         <button className="primary-button" type="submit" disabled={disabled}>
           {disabled ? 'Researching…' : 'Run research'}
         </button>
