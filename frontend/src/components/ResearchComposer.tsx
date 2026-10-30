@@ -8,9 +8,11 @@ export interface ResearchComposerValues {
 
 export function ResearchComposer({
   disabled,
+  isSubmitting,
   onSubmit,
 }: {
   disabled: boolean;
+  isSubmitting: boolean;
   onSubmit: (values: ResearchComposerValues) => void;
 }): ReactElement {
   const [request, setRequest] = useState('');
@@ -46,29 +48,28 @@ export function ResearchComposer({
   }
 
   return (
-    <form className="composer-card" onSubmit={submit}>
-      <div className="composer-card__intro">
-        <p className="eyebrow">New investigation</p>
-        <h2>What should Serena investigate?</h2>
-        <p>
-          Give Serena a focused question. Search automatically or provide public sources yourself.
-        </p>
-      </div>
-
+    <form
+      className="composer-card"
+      onSubmit={submit}
+      aria-busy={isSubmitting}
+      aria-labelledby="research-heading"
+    >
       <label className="field">
         <span>Research question</span>
         <textarea
+          id="research-question"
           value={request}
           onChange={(event) => setRequest(event.target.value)}
           placeholder="Find current scholarships for Nigerian undergraduates."
-          rows={4}
+          rows={3}
           maxLength={2000}
           disabled={disabled}
+          aria-invalid={Boolean(error && !request.trim())}
         />
         <small>{request.length}/2000 characters</small>
       </label>
 
-      <fieldset className="source-mode">
+      <fieldset className="source-mode" disabled={disabled}>
         <legend>How should Serena find sources?</legend>
         <label>
           <input
@@ -102,21 +103,27 @@ export function ResearchComposer({
             value={sourcesText}
             onChange={(event) => setSourcesText(event.target.value)}
             placeholder={'https://example.org/source-one\nhttps://example.org/source-two'}
-            rows={4}
+            rows={3}
             disabled={disabled}
+            aria-invalid={Boolean(error && sourceMode === 'provided')}
           />
           <small>One HTTPS URL per line, up to five sources.</small>
         </label>
       ) : null}
 
       {error ? (
-        <p className="form-error" role="alert">
+        <p className="form-error" id="research-form-error" role="alert">
           {error}
         </p>
       ) : null}
       <div className="composer-card__footer">
-        <button className="primary-button" type="submit" disabled={disabled}>
-          {disabled ? 'Researching…' : 'Run research'}
+        <button
+          className="primary-button"
+          type="submit"
+          disabled={disabled}
+          aria-busy={isSubmitting}
+        >
+          {isSubmitting ? 'Researching…' : 'Run research'}
         </button>
       </div>
     </form>

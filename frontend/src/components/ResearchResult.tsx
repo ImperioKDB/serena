@@ -90,9 +90,14 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
         <h2>Sources and quality signals</h2>
       </div>
       <div className="source-list">
-        {result.sources.map((source) => (
-          <SourceCard key={source.id} source={source} />
-        ))}
+        {result.sources.length > 0 ? (
+          result.sources.map((source) => <SourceCard key={source.id} source={source} />)
+        ) : (
+          <div className="empty-panel">
+            <strong>No readable sources were saved for this run.</strong>
+            <span>Review the coverage notice above before drawing conclusions.</span>
+          </div>
+        )}
       </div>
     </section>
   );

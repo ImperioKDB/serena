@@ -25,7 +25,20 @@
   --danger: #a33c4b;
   --danger-soft: #fff0f1;
   --danger-line: #edc3c9;
+  --control-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.82) inset, 0 2px 0 rgba(31, 48, 97, 0.1),
+    0 4px 8px rgba(31, 48, 97, 0.08);
+  --control-shadow-hover:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 3px 0 rgba(31, 48, 97, 0.12),
+    0 6px 12px rgba(31, 48, 97, 0.11);
+  --control-shadow-pressed: 0 1px 2px rgba(31, 48, 97, 0.1) inset, 0 1px 1px rgba(31, 48, 97, 0.08);
+  --control-shadow-disabled: 0 1px 0 rgba(255, 255, 255, 0.5) inset;
+  --shadow-recessed: 0 1px 2px rgba(31, 48, 97, 0.06) inset;
+  --shadow-card: 0 1px 4px rgba(31, 48, 97, 0.04);
+  --press-offset: 2px;
+  --control-transition: 120ms var(--ease-out);
   --radius-card: 0.85rem;
+  --radius-control: 0.7rem;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 :root[data-theme='dark'] {
@@ -51,4 +64,14 @@
   --danger: #ff9ca7;
   --danger-soft: #3b242b;
   --danger-line: #70414a;
+  --control-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 2px 0 rgba(0, 0, 0, 0.22),
+    0 4px 8px rgba(0, 0, 0, 0.16);
+  --control-shadow-hover:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 3px 0 rgba(0, 0, 0, 0.24),
+    0 6px 12px rgba(0, 0, 0, 0.2);
+  --control-shadow-pressed: 0 1px 2px rgba(0, 0, 0, 0.22) inset, 0 1px 1px rgba(0, 0, 0, 0.14);
+  --control-shadow-disabled: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --shadow-recessed: 0 1px 2px rgba(0, 0, 0, 0.16) inset;
+  --shadow-card: 0 1px 5px rgba(0, 0, 0, 0.12);
 }

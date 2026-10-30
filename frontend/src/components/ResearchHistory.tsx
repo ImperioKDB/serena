@@ -118,7 +118,13 @@ function TaskRow({
         {task.findingCount === 1 ? '' : 's'}
       </p>
       <div className="history-item__actions">
-        <button className="secondary-button" type="button" onClick={onOpen} disabled={disabled}>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={onOpen}
+          disabled={disabled}
+          aria-busy={loading}
+        >
           {loading ? 'Loading…' : 'View result'}
         </button>
         {pendingDelete ? (
@@ -128,8 +134,9 @@ function TaskRow({
               type="button"
               onClick={onConfirmDelete}
               disabled={disabled}
+              aria-busy={loading}
             >
-              Confirm delete
+              {loading ? 'Deleting…' : 'Confirm delete'}
             </button>
             <button
               className="text-button"
@@ -142,7 +149,7 @@ function TaskRow({
           </>
         ) : (
           <button
-            className="text-button"
+            className="text-button text-button--danger"
             type="button"
             onClick={onRequestDelete}
             disabled={disabled}
@@ -250,7 +257,9 @@ export function ResearchHistory({
       <div className="history-panel__heading">
         <div>
           <p className="eyebrow">Your workspace</p>
-          <h2 id="research-history-heading">Research history</h2>
+          <h1 className="history-page-title" id="research-history-heading">
+            Research history
+          </h1>
           <p>Only tasks saved to your signed-in account appear here.</p>
         </div>
         <button
@@ -258,6 +267,7 @@ export function ResearchHistory({
           type="button"
           onClick={() => setRefreshCount((count) => count + 1)}
           disabled={loading || loadingMore}
+          aria-busy={loading}
         >
           Refresh
         </button>
@@ -270,6 +280,8 @@ export function ResearchHistory({
             className="text-button"
             type="button"
             onClick={() => setRefreshCount((count) => count + 1)}
+            disabled={loading || loadingMore}
+            aria-busy={loading}
           >
             Retry
           </button>
@@ -309,6 +321,7 @@ export function ResearchHistory({
           type="button"
           onClick={() => void loadMore()}
           disabled={loadingMore}
+          aria-busy={loadingMore}
         >
           {loadingMore ? 'Loading…' : 'Load more'}
         </button>
