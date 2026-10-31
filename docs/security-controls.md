@@ -20,8 +20,8 @@ Serena currently runs its API on Vercel and uses Playwright/Browserbase to read 
 | JSON request body                                        |                  64 KiB |
 | Allowed browser request methods                          |       GET and HEAD only |
 | Browser network requests per page                        |                      80 |
-| Maximum decoded response per resource                    |                   2 MiB |
-| Maximum combined page responses                          |                   8 MiB |
+| Maximum decoded response per resource                    |                   4 MiB |
+| Maximum combined page responses                          |                  16 MiB |
 | API requests per authenticated-principal hash            | 20 per 60-second window |
 | Concurrent API requests per authenticated-principal hash |                       2 |
 | Admission lease expiry after a killed function           |             120 seconds |
@@ -52,5 +52,5 @@ Direct tests against the Serena project used unique temporary key hashes and req
 5. The rate and concurrency limits are global per authenticated principal. Dashboard sessions are verified by Supabase Auth, and new tasks store the verified Supabase user UUID as `owner_id`; legacy prototype and server-API-key tasks remain unowned. No task-list/history endpoint is exposed yet. Future read endpoints must filter by `owner_id` and enforce authorization server-side; the current API uses a privileged Postgres connection, so RLS alone does not constrain its SQL.
 6. Google OAuth requires a Google Web OAuth client ID/secret configured in Supabase Auth, plus exact site/redirect allow-list entries. The client secret must remain in Supabase, never in the browser bundle. See [`google-auth-setup.md`](./google-auth-setup.md).
 7. The request-admission and task-owner migrations are additive. Confirm both are present in the Serena Supabase project before deploying API code that uses them.
-8. Pages that return recognizable human/security-verification interstitials are retained as attempted sources with a blocked status, but their text is not stored as evidence or passed to the claim extractor. Unsupported-browser error screens are retained as unavailable sources and likewise excluded from evidence. If any requested source is blocked or unavailable, Serena marks coverage incomplete and skips AI claim extraction rather than inferring that no result exists. Serena does not solve or bypass security challenges; use accessible sources or review them manually.
+8. Pages that return recognizable human/security-verification interstitials are retained as attempted sources with a blocked status, but their text is not stored as evidence or passed to the claim extractor. Unsupported-browser error screens are retained as unavailable sources and likewise excluded from evidence. If coverage is incomplete, Serena may extract provisional claims only from evidence saved from readable pages; non-exact claims are marked proposed and require review. If no readable evidence exists, claim extraction is skipped. Serena does not solve or bypass security challenges; use accessible sources or review them manually.
 9. In discovery mode, response-size warnings record only the error code and a typed scope (`resource` for one response, `page` for the combined page budget). They do not include the research question, source URL, or internal exception message.

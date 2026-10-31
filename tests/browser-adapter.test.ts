@@ -42,7 +42,7 @@ beforeAll(async () => {
     }
 
     if (request.url === '/oversized-script.js') {
-      const body = Buffer.alloc(2 * 1024 * 1024 + 1, 'x');
+      const body = Buffer.alloc(4 * 1024 * 1024 + 1, 'x');
       response.writeHead(200, {
         'content-type': 'text/javascript',
         'content-length': String(body.byteLength),

@@ -39,7 +39,7 @@ describe('installRequestGuard response-size diagnostics', () => {
       statusCode: 200,
       headers: {},
       setCookies: [],
-      body: Buffer.alloc(2 * 1024 * 1024),
+      body: Buffer.alloc(4 * 1024 * 1024),
     };
     fetchPublicResponseMock.mockResolvedValue(fullResource);
 

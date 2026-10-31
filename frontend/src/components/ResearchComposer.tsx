@@ -92,7 +92,7 @@ export function ResearchComposer({
           <span>Use URLs I provide</span>
         </label>
         {sourceMode === 'discover' ? (
-          <small>Serena searches the web, then checks up to five public pages it can read.</small>
+          <small>Serena searches the web, then checks up to ten public pages it can read.</small>
         ) : null}
       </fieldset>
 

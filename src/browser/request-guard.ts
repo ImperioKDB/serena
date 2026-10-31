@@ -6,8 +6,8 @@ import type { BrowserReadOptions } from './browser-adapter.js';
 import { fetchPublicResponse } from './safe-http.js';
 
 const MAX_PAGE_REQUESTS = 80;
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_PAGE_BYTES = 8 * 1024 * 1024;
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_PAGE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const BLOCKED_RESOURCE_TYPES = new Set(['font', 'image', 'media']);
 type BrowserCookie = Parameters<BrowserContext['addCookies']>[0][number];

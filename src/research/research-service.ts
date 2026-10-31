@@ -72,7 +72,7 @@ export class ResearchService {
         if (!this.searchProvider) throw new Error('Automatic search is not configured.');
         const searchResult = await this.searchProvider.search(input.request, { maxResults: 10 });
         const candidates = searchResult.candidates;
-        sourceUrls = candidates.slice(0, 5).map((candidate) => candidate.url);
+        sourceUrls = candidates.slice(0, 10).map((candidate) => candidate.url);
         discovery = {
           provider: searchResult.provider,
           candidateCount: candidates.length,
@@ -194,12 +194,9 @@ export class ResearchService {
           .map((source) => source.id),
       );
       let findings = extractCrossSourceFindings(evidenceRecords, duplicateSourceIds);
-      if (
-        this.claimExtractor &&
-        securityChallengeSourceCount === 0 &&
-        unreadableSourceCount === 0 &&
-        evidenceRecords.length > 0
-      ) {
+      const incompleteSourceCoverage =
+        securityChallengeSourceCount > 0 || unreadableSourceCount > 0;
+      if (this.claimExtractor && evidenceRecords.length > 0) {
         try {
           const remainingMs = Math.floor(
             MAX_RESEARCH_DURATION_MS - (performance.now() - taskStartedAt),
@@ -210,7 +207,15 @@ export class ResearchService {
             evidence: evidenceRecords,
             signal: AbortSignal.timeout(Math.min(MAX_CLAIM_EXTRACTION_DURATION_MS, remainingMs)),
           });
-          findings = extractedFindings.map(({ reviewRequired, ...finding }) =>
+          const validEvidenceIds = new Set(evidenceRecords.map((item) => item.id));
+          const groundedFindings = extractedFindings.filter((finding) => {
+            const uniqueIds = new Set(finding.evidenceIds);
+            return (
+              uniqueIds.size === finding.evidenceIds.length &&
+              [...uniqueIds].every((id) => validEvidenceIds.has(id))
+            );
+          });
+          findings = groundedFindings.map(({ reviewRequired, ...finding }) =>
             reviewRequired === undefined ? finding : { ...finding, reviewRequired },
           );
           const exactFindings = new Map(
@@ -228,6 +233,9 @@ export class ResearchService {
           await this.repository.appendEvent(task.id, 'claims_extracted', {
             findingCount: findings.length,
             method: 'llm-evidence-grounded',
+            sourceCoverage: incompleteSourceCoverage ? 'incomplete' : 'complete',
+            securityChallengeSourceCount,
+            unreadableSourceCount,
           });
         } catch (error) {
           await this.repository.appendEvent(task.id, 'claims_extraction_fallback', {
@@ -235,12 +243,9 @@ export class ResearchService {
             errorType: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
           });
         }
-      } else if (
-        this.claimExtractor &&
-        (securityChallengeSourceCount > 0 || unreadableSourceCount > 0)
-      ) {
+      } else if (this.claimExtractor) {
         await this.repository.appendEvent(task.id, 'claims_extraction_skipped', {
-          reason: 'incomplete_source_coverage',
+          reason: 'no_readable_evidence',
           securityChallengeSourceCount,
           unreadableSourceCount,
         });

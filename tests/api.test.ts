@@ -665,7 +665,7 @@ describe('Serena API', () => {
       name: 'firecrawl',
       search: vi.fn(async () => ({
         provider: 'firecrawl',
-        candidates: Array.from({ length: 8 }, (_, index) => ({
+        candidates: Array.from({ length: 12 }, (_, index) => ({
           url: `https://example.com/page-${index + 1}`,
           title: `Result ${index + 1}`,
           rank: index + 1,
@@ -688,13 +688,13 @@ describe('Serena API', () => {
       'Find scholarships for Nigerian undergraduates.',
       { maxResults: 10 },
     );
-    expect(readPage).toHaveBeenCalledTimes(5);
+    expect(readPage).toHaveBeenCalledTimes(10);
     expect(response.json().data.discovery).toEqual({
       provider: 'firecrawl',
-      candidateCount: 8,
-      attemptedCount: 5,
+      candidateCount: 12,
+      attemptedCount: 10,
     });
-    expect(response.json().data.sources).toHaveLength(5);
+    expect(response.json().data.sources).toHaveLength(10);
   });
 
   it('keeps manual research available when automatic search is not configured', async () => {

@@ -50,9 +50,9 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
                   evidence.{' '}
                 </>
               ) : null}
-              This incomplete run cannot establish whether matching opportunities exist. Review
-              blocked sites yourself or try accessible sources; Serena will not bypass security
-              checks.
+              {result.findings.length > 0
+                ? 'Any findings below are provisional and grounded only in evidence from pages Serena could read. This run cannot establish full coverage; Serena will not bypass security checks.'
+                : 'This incomplete run cannot establish whether matching opportunities exist. Review blocked sites yourself or try accessible sources; Serena will not bypass security checks.'}
             </span>
           ) : (
             <span>

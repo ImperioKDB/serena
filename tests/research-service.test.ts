@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
 import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
-import type { ClaimExtractor } from '../src/research/claim-extractor.js';
+import type { AiClaimFinding, ClaimExtractor } from '../src/research/claim-extractor.js';
 import { ResearchService } from '../src/research/research-service.js';
 import type { SearchProvider } from '../src/search/search-provider.js';
 
@@ -60,7 +60,26 @@ describe('research service security-challenge handling', () => {
   it('marks partial coverage and excludes challenge text when only some sources are blocked', async () => {
     const repository = new InMemoryTaskRepository();
     const claimExtractor: ClaimExtractor = {
-      extract: vi.fn(async () => []),
+      extract: vi.fn(async (input: Parameters<ClaimExtractor['extract']>[0]) => {
+        const findings: AiClaimFinding[] = [
+          {
+            claim: 'The accessible page describes a scholarship program.',
+            status: 'supported',
+            verificationMethod: 'llm-evidence-grounded',
+            uncertainty: 'Only one readable source was available.',
+            evidenceIds: [input.evidence[0]!.id],
+            reviewRequired: false,
+          },
+          {
+            claim: 'This unrelated claim cites evidence from another task.',
+            status: 'supported',
+            verificationMethod: 'llm-evidence-grounded',
+            uncertainty: 'The cited evidence is not in this research task.',
+            evidenceIds: ['evidence-from-another-task'],
+          },
+        ];
+        return findings;
+      }),
     };
     const service = new ResearchService(
       adapterFor(async (url) =>
@@ -88,7 +107,15 @@ describe('research service security-challenge handling', () => {
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.excerpt).not.toContain('Performing security verification');
     expect(repository.getEvidence(taskId)).toHaveLength(1);
-    expect(claimExtractor.extract).not.toHaveBeenCalled();
+    expect(claimExtractor.extract).toHaveBeenCalledOnce();
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      claim: 'The accessible page describes a scholarship program.',
+      status: 'proposed',
+      verificationMethod: 'llm-evidence-grounded',
+      reviewRequired: true,
+      evidenceIds: [result.evidence[0]?.id],
+    });
   });
 });
 
@@ -217,7 +244,7 @@ describe('research service discovery', () => {
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.excerpt).toContain('Accessible statistics');
     expect(repository.getEvidence(taskId)).toHaveLength(1);
-    expect(claimExtractor.extract).not.toHaveBeenCalled();
+    expect(claimExtractor.extract).toHaveBeenCalledOnce();
   });
 
   it('marks an empty candidate list as incomplete instead of a negative finding', async () => {
