@@ -35,19 +35,24 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
       {coverage.status === 'incomplete' ? (
         <div className="coverage-notice" role="status">
           <strong>Research incomplete</strong>
-          {blockedSourceCount > 0 ? (
+          {blockedSourceCount > 0 || unreadableSourceCount > 0 ? (
             <span>
-              {blockedSourceCount} of {result.sources.length} source pages required a security
-              verification. Serena excluded their text from evidence and AI extraction, so this run
-              cannot establish whether matching opportunities exist. Review those sites yourself or
-              try accessible sources; Serena will not bypass the security checks.
-            </span>
-          ) : unreadableSourceCount > 0 ? (
-            <span>
-              {unreadableSourceCount} discovered page{unreadableSourceCount === 1 ? '' : 's'} did
-              not respond, denied access, or exceeded a safety limit. Serena skipped them and did
-              not attempt to bypass any checks. The remaining readable pages may not represent the
-              full set of opportunities.
+              {blockedSourceCount > 0 ? (
+                <>
+                  {blockedSourceCount} source page{blockedSourceCount === 1 ? '' : 's'} required a
+                  security verification; Serena excluded their text from evidence.{' '}
+                </>
+              ) : null}
+              {unreadableSourceCount > 0 ? (
+                <>
+                  {unreadableSourceCount} discovered page{unreadableSourceCount === 1 ? '' : 's'}{' '}
+                  could not be read or returned an error page; Serena excluded them from
+                  evidence.{' '}
+                </>
+              ) : null}
+              This incomplete run cannot establish whether matching opportunities exist. Review
+              blocked sites yourself or try accessible sources; Serena will not bypass security
+              checks.
             </span>
           ) : (
             <span>

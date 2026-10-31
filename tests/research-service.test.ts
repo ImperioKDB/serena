@@ -93,6 +93,44 @@ describe('research service security-challenge handling', () => {
 });
 
 describe('research service discovery', () => {
+  it('excludes unsupported-browser error pages from evidence and marks coverage incomplete', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = { extract: vi.fn(async () => []) };
+    const service = new ResearchService(
+      adapterFor(async (url) => ({
+        ...page('https://www.facebook.com/unsupportedbrowser', 'Your browser is not supported.'),
+        url,
+        title: 'Error',
+      })),
+      repository,
+      claimExtractor,
+      {
+        name: 'mock',
+        search: async () => ({
+          provider: 'mock',
+          candidates: [
+            { url: 'https://www.facebook.com/scholarship-post', title: 'Scholarship', rank: 1 },
+          ],
+        }),
+      },
+    );
+
+    const { taskId, result } = await service.run({
+      request: 'Find scholarships for Nigerian undergraduates.',
+      sourceMode: 'discover',
+    });
+
+    expect(result.coverage).toEqual({
+      status: 'incomplete',
+      securityChallengeSourceCount: 0,
+      unreadableSourceCount: 1,
+    });
+    expect(result.sources[0]?.quality.accessStatus).toBe('unavailable');
+    expect(result.evidence).toEqual([]);
+    expect(repository.getEvidence(taskId)).toEqual([]);
+    expect(claimExtractor.extract).not.toHaveBeenCalled();
+  });
+
   it('skips a navigation refusal and tries the next discovered page without bypassing it', async () => {
     const attempted: string[] = [];
     const service = new ResearchService(

@@ -3,7 +3,7 @@ export type FindingStatus = 'proposed' | 'supported' | 'disputed' | 'exact_match
 export interface SourceQuality {
   domain: string;
   kind: 'government' | 'education' | 'organization-domain' | 'commercial' | 'unknown';
-  accessStatus?: 'readable' | 'security-challenge';
+  accessStatus?: 'readable' | 'security-challenge' | 'unavailable';
   signals: string[];
   contentHash: string;
   duplicateOfSourceId?: string;

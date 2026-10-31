@@ -11,6 +11,7 @@ function formatDate(value: string): string {
 
 export function SourceCard({ source }: { source: ResearchSource }): ReactElement {
   const blocked = source.quality.accessStatus === 'security-challenge';
+  const unavailable = source.quality.accessStatus === 'unavailable';
 
   return (
     <article className="source-card">
@@ -21,6 +22,8 @@ export function SourceCard({ source }: { source: ResearchSource }): ReactElement
         </div>
         {blocked ? (
           <span className="signal-chip signal-chip--warning">Security check · excluded</span>
+        ) : unavailable ? (
+          <span className="signal-chip signal-chip--warning">Unavailable page · excluded</span>
         ) : source.quality.duplicateOfSourceId ? (
           <span className="signal-chip signal-chip--warning">Duplicate content</span>
         ) : null}
@@ -45,7 +48,9 @@ export function SourceCard({ source }: { source: ResearchSource }): ReactElement
       <p className="source-card__note">
         {blocked
           ? 'This page required a security verification. Serena excluded its text from evidence and did not bypass the check.'
-          : 'These are domain and content signals only. They are not proof that this source is accurate.'}
+          : unavailable
+            ? 'This page returned an unsupported-browser error. Serena excluded its text from evidence.'
+            : 'These are domain and content signals only. They are not proof that this source is accurate.'}
       </p>
     </article>
   );

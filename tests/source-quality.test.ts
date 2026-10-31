@@ -58,6 +58,22 @@ describe('source quality assessment', () => {
     expect(result.signals).toContain('security-challenge');
   });
 
+  it('recognizes an unsupported-browser endpoint as unavailable rather than readable evidence', () => {
+    const result = assessSourceQuality(
+      page(
+        'https://www.facebook.com/unsupportedbrowser',
+        'Your browser is not supported. Please switch to a supported browser.',
+        'Error',
+      ),
+      'unavailable',
+      [],
+    );
+
+    expect(result.accessStatus).toBe('unavailable');
+    expect(result.signals).toContain('unsupported-browser');
+    expect(result.signals).not.toContain('security-challenge');
+  });
+
   it('does not treat a normal article mentioning Cloudflare as a security challenge', () => {
     const result = assessSourceQuality(
       page(

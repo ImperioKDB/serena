@@ -148,6 +148,16 @@ export class ResearchService {
           continue;
         }
 
+        if (quality.accessStatus === 'unavailable') {
+          unreadableSourceCount += 1;
+          await this.repository.appendEvent(task.id, 'source_unreadable', {
+            sourceId: source.id,
+            url: page.finalUrl,
+            reason: 'unsupported_browser',
+          });
+          continue;
+        }
+
         sourceSnapshots.push({ id: source.id, hash: quality.contentHash });
         const evidenceRecord = await this.repository.recordEvidence(task.id, source.id, {
           excerpt: page.text.slice(0, MAX_EVIDENCE_CHARS),

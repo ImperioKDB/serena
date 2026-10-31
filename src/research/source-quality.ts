@@ -8,7 +8,7 @@ export type SourceKind =
 export interface SourceQualityMetadata {
   domain: string;
   kind: SourceKind;
-  accessStatus: 'readable' | 'security-challenge';
+  accessStatus: 'readable' | 'security-challenge' | 'unavailable';
   signals: string[];
   contentHash: string;
   duplicateOfSourceId?: string;
@@ -60,6 +60,19 @@ function hasSecurityChallenge(title: string, text: string): boolean {
   return strongChallengeIndicators.some((indicator) => indicator.test(content));
 }
 
+function hasUnsupportedBrowserInterstitial(source: BrowserReadResult): boolean {
+  const pathSegments = new URL(source.finalUrl).pathname
+    .toLocaleLowerCase()
+    .split('/')
+    .filter(Boolean);
+  if (pathSegments.at(-1) === 'unsupportedbrowser') return true;
+
+  const errorTitle = /^(?:error|unsupported browser)$/iu.test(source.title.trim());
+  const unsupportedBrowserMessage =
+    /\b(?:unsupported browser|(?:your|this) browser is not supported|switch to a supported browser)\b/iu;
+  return errorTitle && unsupportedBrowserMessage.test(source.text);
+}
+
 export function assessSourceQuality(
   source: BrowserReadResult,
   sourceId: string,
@@ -70,7 +83,9 @@ export function assessSourceQuality(
   const classification = classifyKind(domain);
   const accessStatus = hasSecurityChallenge(source.title, source.text)
     ? 'security-challenge'
-    : 'readable';
+    : hasUnsupportedBrowserInterstitial(source)
+      ? 'unavailable'
+      : 'readable';
   const hash = contentHash(source.text);
   const duplicate = previous.find((item) => item.hash === hash);
 
@@ -81,6 +96,7 @@ export function assessSourceQuality(
     signals: [
       ...(classification.signal === undefined ? [] : [classification.signal]),
       ...(accessStatus === 'security-challenge' ? ['security-challenge'] : []),
+      ...(accessStatus === 'unavailable' ? ['unsupported-browser'] : []),
     ],
     contentHash: hash,
     ...(duplicate === undefined ? {} : { duplicateOfSourceId: duplicate.id }),
