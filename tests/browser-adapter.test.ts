@@ -77,7 +77,7 @@ describe('PlaywrightBrowserAdapter', () => {
     const adapter = new PlaywrightBrowserAdapter();
     const result = await adapter.readPage(`${baseUrl}/article`, { allowLocalHttp: true });
 
-    expect(result.title).toBe('Serena Fixture Article');
+    expect(result.title).toBe('Evidence-first research');
     expect(result.text).toContain('This fixture verifies deterministic page reading.');
     expect(result.finalUrl).toBe(`${baseUrl}/article`);
     expect(result.retrievedAt).toMatch(/Z$/);

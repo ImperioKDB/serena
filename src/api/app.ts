@@ -10,6 +10,7 @@ import type { AuthVerifier } from './supabase-auth.js';
 import type { RequestAdmissionStore } from '../persistence/request-admission-store.js';
 import type { TaskRepository } from '../persistence/task-repository.js';
 import type { ClaimExtractor } from '../research/claim-extractor.js';
+import type { ResearchServiceLimits } from '../research/research-service.js';
 import { SearchProvidersUnavailableError } from '../search/fallback-search-provider.js';
 import type { SearchProvider } from '../search/search-provider.js';
 import { ResearchService } from '../research/research-service.js';
@@ -64,6 +65,7 @@ export interface AppOptions {
   taskRepository?: TaskRepository;
   claimExtractor?: ClaimExtractor;
   searchProvider?: SearchProvider;
+  researchLimits?: Partial<ResearchServiceLimits>;
 }
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -535,15 +537,17 @@ export function createApp(
         options.claimExtractor,
         options.searchProvider,
         (diagnostic) => {
-          if (diagnostic.code !== 'RESPONSE_TOO_LARGE') return;
           request.log.warn(
             {
               errorCode: diagnostic.code,
-              responseSizeLimitScope: diagnostic.responseSizeLimitScope ?? 'unknown',
+              ...(diagnostic.responseSizeLimitScope === undefined
+                ? {}
+                : { responseSizeLimitScope: diagnostic.responseSizeLimitScope }),
             },
-            'Research source skipped due to response-size budget',
+            'Research source skipped after a guarded read failure',
           );
         },
+        options.researchLimits,
       );
       const execution = await service.run({
         request: parsed.data.request,

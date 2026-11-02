@@ -13,10 +13,14 @@ const successfulResult: BrowserReadResult = {
   url: 'https://example.com/article',
   finalUrl: 'https://example.com/article',
   title: 'Example article',
-  text: 'Evidence text',
+  text: usefulArticleText('Example scholarship article'),
   retrievedAt: '2026-10-11T18:00:00.000Z',
   durationMs: 120,
 };
+
+function usefulArticleText(label: string): string {
+  return `At ${label}, program managers publish a distinct award overview and applicant rules. Applicants considering ${label} should verify the deadline on the primary page and gather transcripts, references, and proof of enrollment before submitting anything. For ${label}, the selection panel weighs academic readiness, community service, and financial need; students can contact the office to ask about renewal and payment timelines.`;
+}
 
 const adapterFor = (readPage: BrowserAdapter['readPage']): BrowserAdapter => ({ readPage });
 
@@ -473,7 +477,7 @@ describe('Serena API', () => {
       ...successfulResult,
       url: target,
       finalUrl: target,
-      text: `Evidence from ${target}`,
+      text: usefulArticleText(`Evidence from ${target}`),
     });
     app = createApp(adapterFor(readPage), { taskRepository: repository });
 
@@ -501,11 +505,15 @@ describe('Serena API', () => {
     const repository = new InMemoryTaskRepository();
     const sharedSentence = 'This identical statement appears in both sources.';
     let index = 0;
+    const distinctArticleDetails = [
+      'The astronomy grant funds telescope access, travel, and supervised field observations for final-year physics students. Applicants submit a project outline, faculty reference, and budget before the November review deadline.',
+      'The community art fellowship provides studio access and materials support for emerging muralists. Candidates prepare a portfolio, describe public engagement goals, and attend a spring interview with the regional committee.',
+    ];
     const readPage = async (target: string) => ({
       ...successfulResult,
       url: target,
       finalUrl: target,
-      text: `${sharedSentence} Unique source detail ${++index}.`,
+      text: `${sharedSentence} ${distinctArticleDetails[index++]}`,
     });
     app = createApp(adapterFor(readPage), { taskRepository: repository });
 
@@ -535,7 +543,7 @@ describe('Serena API', () => {
         ...successfulResult,
         url: target,
         finalUrl: target,
-        text: 'This exact sentence is copied across the same content.',
+        text: usefulArticleText('Copied scholarship content'),
       })),
       { taskRepository: repository },
     );
@@ -605,7 +613,7 @@ describe('Serena API', () => {
         ...successfulResult,
         url: target,
         finalUrl: target,
-        text: `This exact shared statement is long enough for matching. Unique detail from ${target}.`,
+        text: `This exact shared statement is long enough for matching. ${usefulArticleText(`Unique detail from ${target}`)}`,
       })),
       {
         taskRepository: repository,
@@ -655,11 +663,24 @@ describe('Serena API', () => {
 
   it('discovers bounded candidates and reads only them through the browser adapter', async () => {
     const repository = new InMemoryTaskRepository();
+    const candidateTopics = [
+      'astronomy telescope fieldwork grant',
+      'community health nursing stipend',
+      'climate adaptation research award',
+      'classical music composition fellowship',
+      'agricultural soil conservation scholarship',
+      'robotics engineering laboratory award',
+      'historic preservation archives grant',
+      'marine biology coastal research fellowship',
+      'public finance policy scholarship',
+      'language education teacher training award',
+    ];
+    let candidateIndex = 0;
     const readPage = vi.fn(async (target: string) => ({
       ...successfulResult,
       url: target,
       finalUrl: target,
-      text: `Readable content from ${target}`,
+      text: usefulArticleText(candidateTopics[candidateIndex++]!),
     }));
     const searchProvider: SearchProvider = {
       name: 'firecrawl',
@@ -688,13 +709,23 @@ describe('Serena API', () => {
       'Find scholarships for Nigerian undergraduates.',
       { maxResults: 10 },
     );
-    expect(readPage).toHaveBeenCalledTimes(10);
-    expect(response.json().data.discovery).toEqual({
+    expect(readPage).toHaveBeenCalledTimes(5);
+    expect(response.json().data.discovery).toMatchObject({
       provider: 'firecrawl',
       candidateCount: 12,
-      attemptedCount: 10,
+      attemptedCount: 5,
+      selectedCount: 10,
+      retrievalAttemptCount: 5,
+      successfulReadCount: 5,
+      usefulContentCount: 5,
+      retryCount: 0,
     });
-    expect(response.json().data.sources).toHaveLength(10);
+    expect(response.json().data.discovery.candidates).toHaveLength(12);
+    expect(response.json().data.discovery.candidates[10]).toMatchObject({
+      status: 'rejected',
+      reason: 'candidate-cap-exceeded',
+    });
+    expect(response.json().data.sources).toHaveLength(5);
   });
 
   it('keeps manual research available when automatic search is not configured', async () => {
@@ -784,7 +815,7 @@ describe('Serena API', () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     const warning = logLines
       .map((line) => JSON.parse(line) as Record<string, unknown>)
-      .find((entry) => entry.msg === 'Research source skipped due to response-size budget');
+      .find((entry) => entry.msg === 'Research source skipped after a guarded read failure');
     expect(warning).toMatchObject({
       errorCode: 'RESPONSE_TOO_LARGE',
       responseSizeLimitScope: 'page',

@@ -1,5 +1,6 @@
 import type { BrowserReadResult } from '../core/result.js';
 import type {
+  EvidenceExtractionMethod,
   EvidenceVerificationStatus,
   ResearchEvidenceRecord,
   ResearchSourceRecord,
@@ -41,7 +42,7 @@ export interface ListOwnedTasksOptions {
 export interface CreateEvidenceInput {
   excerpt: string;
   locator: string;
-  extractionMethod: 'visible-text-prefix';
+  extractionMethod: EvidenceExtractionMethod;
   verificationStatus: EvidenceVerificationStatus;
 }
 
@@ -56,6 +57,11 @@ export interface TaskRepository {
     sourceId: string,
     input: CreateEvidenceInput,
   ): Promise<ResearchEvidenceRecord>;
+  recordEvidenceBatch?(
+    taskId: string,
+    sourceId: string,
+    inputs: CreateEvidenceInput[],
+  ): Promise<ResearchEvidenceRecord[]>;
   appendEvent(taskId: string, eventType: string, payload: Record<string, unknown>): Promise<void>;
   markCompleted(taskId: string, result: unknown): Promise<void>;
   markFailed(taskId: string, errorCode: string): Promise<void>;

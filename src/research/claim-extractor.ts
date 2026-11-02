@@ -17,7 +17,47 @@ export const claimExtractionResponseSchema = z.object({
 
 export type AiClaimFinding = z.infer<typeof claimFindingSchema>;
 
+export interface CandidateEvaluationInput {
+  request: string;
+  candidates: Array<{ rank: number; url: string; title: string }>;
+  signal?: AbortSignal;
+}
+
+export interface CandidateEvaluation {
+  rank: number;
+  relevanceScore: number;
+}
+
+export interface ModelEvidenceAnalysis {
+  provider: string;
+  model: string;
+  findings: AiClaimFinding[];
+  sourceAssessments: Array<{
+    sourceId: string;
+    relevanceScore: number;
+    contentType: 'article' | 'listing' | 'program-page' | 'directory' | 'other';
+  }>;
+  evidenceAssessments: Array<{
+    evidenceId: string;
+    relevanceScore: number;
+    relation: 'supports' | 'contradicts' | 'context';
+  }>;
+  potentialContradictions: Array<{ summary: string; evidenceIds: string[] }>;
+  missingEvidence: string[];
+  usage?: { inputTokens?: number; outputTokens?: number };
+}
+
 export interface ClaimExtractor {
+  readonly provider?: string;
+  readonly model?: string;
+  readonly supportsCandidateEvaluation?: boolean;
+  evaluateCandidates?(input: CandidateEvaluationInput): Promise<CandidateEvaluation[]>;
+  analyzeEvidence?(input: {
+    request: string;
+    sources: Array<{ id: string; title: string; domain: string; relevanceScore: number }>;
+    evidence: ResearchEvidenceRecord[];
+    signal?: AbortSignal;
+  }): Promise<ModelEvidenceAnalysis>;
   extract(input: {
     request: string;
     evidence: ResearchEvidenceRecord[];
@@ -25,7 +65,7 @@ export interface ClaimExtractor {
   }): Promise<AiClaimFinding[]>;
 }
 
-function assertEvidenceGrounding(
+export function filterGroundedFindings(
   findings: AiClaimFinding[],
   evidence: ResearchEvidenceRecord[],
 ): AiClaimFinding[] {
@@ -40,10 +80,12 @@ function assertEvidenceGrounding(
 }
 
 export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
+  public readonly provider = 'openai-compatible';
+
   public constructor(
     private readonly apiKey: string,
     private readonly baseUrl: string,
-    private readonly model = 'gpt-5-mini',
+    public readonly model = 'gpt-5-mini',
   ) {}
 
   public async extract(input: {
@@ -133,6 +175,6 @@ export class OpenAiCompatibleClaimExtractor implements ClaimExtractor {
       throw new Error('Claim extraction model returned no content.');
     }
     const parsed = claimExtractionResponseSchema.parse(JSON.parse(content));
-    return assertEvidenceGrounding(parsed.findings, input.evidence);
+    return filterGroundedFindings(parsed.findings, input.evidence);
   }
 }

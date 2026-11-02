@@ -5,7 +5,8 @@ import { BrowserbaseBrowserAdapter } from './browser/browserbase-browser-adapter
 import { PlaywrightBrowserAdapter } from './browser/playwright-browser-adapter.js';
 import { InMemoryTaskRepository } from './persistence/in-memory-task-repository.js';
 import { PostgresTaskRepository } from './persistence/postgres-task-repository.js';
-import { OpenAiCompatibleClaimExtractor } from './research/claim-extractor.js';
+import { createModelProvider } from './research/create-model-provider.js';
+import { readResearchServiceLimits } from './research/research-limits.js';
 import {
   assertProductionDatabaseUrl,
   assertProductionSupabaseAuth,
@@ -30,19 +31,27 @@ const browserbaseApiKey = process.env.BROWSERBASE_API_KEY;
 const browserbaseProjectId = process.env.BROWSERBASE_PROJECT_ID;
 const databaseUrl = process.env.DATABASE_URL;
 assertProductionDatabaseUrl(databaseUrl);
-const llmApiUrl = process.env.LLM_API_URL;
-const llmApiKey = process.env.LLM_API_KEY;
-const llmModel = process.env.LLM_MODEL ?? 'gpt-5-mini';
+const claimExtractor = createModelProvider({
+  environment: process.env,
+  onFailure: (diagnostic) => {
+    console.warn(
+      JSON.stringify({
+        event: 'serena_model_provider_failure',
+        provider: diagnostic.provider,
+        operation: diagnostic.operation,
+        kind: diagnostic.kind,
+        ...(diagnostic.statusCode === undefined ? {} : { statusCode: diagnostic.statusCode }),
+      }),
+    );
+  },
+});
+const researchLimits = readResearchServiceLimits(process.env);
 const browserAdapter = browserbaseApiKey
   ? new BrowserbaseBrowserAdapter(browserbaseApiKey, browserbaseProjectId)
   : new PlaywrightBrowserAdapter();
 const taskRepository = databaseUrl
   ? new PostgresTaskRepository(databaseUrl)
   : new InMemoryTaskRepository();
-const claimExtractor =
-  llmApiUrl && llmApiKey
-    ? new OpenAiCompatibleClaimExtractor(llmApiKey, llmApiUrl, llmModel)
-    : undefined;
 const app = createApp(
   browserAdapter,
   {
@@ -54,6 +63,7 @@ const app = createApp(
     requestAdmission: taskRepository,
     taskRepository,
     searchProvider,
+    researchLimits,
     ...(claimExtractor === undefined ? {} : { claimExtractor }),
   },
   Fastify({ logger: true, bodyLimit: 64 * 1024, requestTimeout: 15_000 }),

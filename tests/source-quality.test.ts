@@ -14,10 +14,14 @@ function page(finalUrl: string, text: string, title = 'Test page'): BrowserReadR
   };
 }
 
+function usefulArticleText(subject: string): string {
+  return `The ${subject} page presents a clear overview of the available program and its application process. Applicants should review the eligibility requirements, prepare supporting documents, and confirm the current deadline before submitting a request. The administrators publish selection criteria and contact details so readers can verify the information directly.`;
+}
+
 describe('source quality assessment', () => {
   it('reports domain signals without treating them as proof of authority', () => {
     const result = assessSourceQuality(
-      page('https://research.gov.ng/a', 'Official text'),
+      page('https://research.gov.ng/a', usefulArticleText('official research program')),
       'one',
       [],
     );
@@ -26,11 +30,15 @@ describe('source quality assessment', () => {
     expect(result.kind).toBe('government');
     expect(result.accessStatus).toBe('readable');
     expect(result.signals).toContain('government-domain');
-    expect(result.assessment).toBe('domain-signals-only');
+    expect(result.assessment).toBe('domain-and-content-signals-only');
   });
 
   it('does not classify an unfamiliar domain as authoritative', () => {
-    const result = assessSourceQuality(page('https://example.test/a', 'Some text'), 'one', []);
+    const result = assessSourceQuality(
+      page('https://example.test/a', usefulArticleText('independent research program')),
+      'one',
+      [],
+    );
 
     expect(result.kind).toBe('unknown');
     expect(result.signals).toEqual([]);
@@ -78,7 +86,8 @@ describe('source quality assessment', () => {
     const result = assessSourceQuality(
       page(
         'https://example.com/article',
-        'The article explains how Cloudflare protects websites from malicious traffic.',
+        'The article explains how Cloudflare protects websites from malicious traffic. ' +
+          usefulArticleText('normal technology article'),
       ),
       'article',
       [],

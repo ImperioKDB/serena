@@ -4,13 +4,13 @@ import { chromium } from 'playwright-core';
 import { validateTargetUrl } from '../core/policy.js';
 import { BrowserReadError, type BrowserReadResult } from '../core/result.js';
 import type { BrowserAdapter, BrowserReadOptions } from './browser-adapter.js';
+import { extractRenderedArticle } from './page-content-extractor.js';
 import { installRequestGuard } from './request-guard.js';
 import { resolveSafeRedirects } from './redirect-resolver.js';
 import { bypassServiceWorkerNetwork } from './service-worker-guard.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_SESSION_TIMEOUT_SECONDS = 21_600;
-const MAX_EXTRACTED_TEXT_CHARS = 50_000;
 
 export class BrowserbaseBrowserAdapter implements BrowserAdapter {
   private readonly client: Browserbase;
@@ -50,24 +50,27 @@ export class BrowserbaseBrowserAdapter implements BrowserAdapter {
       page.setDefaultTimeout(timeoutMs);
 
       try {
-        await page.goto(resolvedTarget.toString(), { waitUntil: 'domcontentloaded' });
+        const response = await page.goto(resolvedTarget.toString(), { waitUntil: 'domcontentloaded' });
         const policyError = requestGuard.getPolicyError();
         if (policyError) throw policyError;
-        const title = await page.title();
-        const text = await page
-          .locator('body')
-          .evaluate(
-            (body, maxChars) => (body as HTMLElement).innerText.slice(0, maxChars),
-            MAX_EXTRACTED_TEXT_CHARS,
-          );
+        const article = await extractRenderedArticle(page, timeoutMs);
+        const contentType = response?.headers()['content-type']
+          ?.split(';', 1)[0]
+          ?.trim()
+          .toLowerCase()
+          .slice(0, 100);
 
         return {
           url: validatedTarget.toString(),
           finalUrl: page.url(),
-          title,
-          text,
+          title: article.title,
+          text: article.text,
           retrievedAt: new Date().toISOString(),
           durationMs: Math.round(performance.now() - startedAt),
+          extraction: article.metadata,
+          articleBlocks: article.blocks,
+          ...(response ? { httpStatus: response.status() } : {}),
+          ...(contentType ? { contentType } : {}),
         };
       } catch (error) {
         const policyError = requestGuard.getPolicyError();

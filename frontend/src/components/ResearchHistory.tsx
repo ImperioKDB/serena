@@ -54,6 +54,10 @@ function formatDate(value: string): string {
   return Number.isNaN(date.valueOf()) ? 'Date unavailable' : date.toLocaleString();
 }
 
+function isActiveTask(task: Pick<ResearchTaskSummary, 'status'>): boolean {
+  return task.status === 'queued' || task.status === 'running';
+}
+
 function HistoryResult({ task }: { task: ResearchTaskDetail }): ReactElement {
   if (isResearchResult(task.result)) {
     return <ResearchResultView result={task.result} />;
@@ -205,6 +209,66 @@ export function ResearchHistory({
     return () => controller.abort();
   }, [apiUrl, accessToken, refreshKey, refreshCount]);
 
+  const hasActiveTasks = items.some(isActiveTask);
+
+  useEffect(() => {
+    if (!hasActiveTasks) return;
+    const controller = new AbortController();
+    let inFlight = false;
+    const poll = async (): Promise<void> => {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      try {
+        const page = await listResearchHistory({
+          apiUrl,
+          accessToken,
+          limit: 20,
+          offset: 0,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setItems((current) => {
+          const incomingIds = new Set(page.items.map((item) => item.id));
+          const existingById = new Map(current.map((item) => [item.id, item]));
+          const changed = page.items.some((fresh) => {
+            const existing = existingById.get(fresh.id);
+            return (
+              !existing ||
+              existing.status !== fresh.status ||
+              existing.sourceCount !== fresh.sourceCount ||
+              existing.findingCount !== fresh.findingCount ||
+              existing.errorCode !== fresh.errorCode ||
+              existing.finishedAt !== fresh.finishedAt
+            );
+          });
+          if (!changed) return current;
+          return [...page.items, ...current.filter((item) => !incomingIds.has(item.id))];
+        });
+        setHasMore(page.hasMore);
+        if (selectedTask && isActiveTask(selectedTask)) {
+          const latest = await getResearchTask({
+            apiUrl,
+            accessToken,
+            taskId: selectedTask.id,
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted) {
+            setSelectedTask((current) => (current?.id === latest.id ? latest : current));
+          }
+        }
+      } catch {
+        // Polling is best-effort; the manual refresh action remains available.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 5_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [apiUrl, accessToken, hasActiveTasks, selectedTask]);
+
   async function openTask(taskId: string): Promise<void> {
     setBusyTaskId(taskId);
     setError(null);
@@ -261,6 +325,11 @@ export function ResearchHistory({
             Research history
           </h1>
           <p>Only tasks saved to your signed-in account appear here.</p>
+          {hasActiveTasks ? (
+            <p className="history-polling-note" role="status">
+              Active research refreshes automatically every five seconds.
+            </p>
+          ) : null}
         </div>
         <button
           className="secondary-button"

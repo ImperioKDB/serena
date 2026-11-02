@@ -157,6 +157,17 @@ export class PostgresTaskRepository implements TaskRepository, RequestAdmissionS
     taskId: string,
     result: BrowserReadResult,
   ): Promise<ResearchSourceRecord> {
+    const persistedResult: BrowserReadResult = {
+      url: result.url,
+      finalUrl: result.finalUrl,
+      title: result.title,
+      text: '',
+      retrievedAt: result.retrievedAt,
+      durationMs: result.durationMs,
+      ...(result.extraction === undefined ? {} : { extraction: result.extraction }),
+      ...(result.httpStatus === undefined ? {} : { httpStatus: result.httpStatus }),
+      ...(result.contentType === undefined ? {} : { contentType: result.contentType }),
+    };
     const [source] = await this.sql<ResearchSourceRecord[]>`
       insert into research_sources (task_id, url, final_url, title, retrieved_at, result_json)
       values (
@@ -165,7 +176,7 @@ export class PostgresTaskRepository implements TaskRepository, RequestAdmissionS
         ${result.finalUrl},
         ${result.title},
         ${result.retrievedAt},
-        ${this.sql.json(JSON.parse(JSON.stringify(result)))}
+        ${this.sql.json(JSON.parse(JSON.stringify(persistedResult)))}
       )
       returning id, task_id as "taskId", result_json as result
     `;
@@ -209,6 +220,47 @@ export class PostgresTaskRepository implements TaskRepository, RequestAdmissionS
     }
 
     return evidence;
+  }
+
+  public async recordEvidenceBatch(
+    taskId: string,
+    sourceId: string,
+    inputs: CreateEvidenceInput[],
+  ): Promise<ResearchEvidenceRecord[]> {
+    if (inputs.length === 0) return [];
+    if (inputs.length > 12) throw new Error('An evidence batch may contain at most twelve passages.');
+    const rows = inputs.map((input) => ({
+      excerpt: input.excerpt,
+      locator: input.locator,
+      extraction_method: input.extractionMethod,
+      verification_status: input.verificationStatus,
+    }));
+    return this.sql<ResearchEvidenceRecord[]>`
+      insert into research_evidence (
+        task_id, source_id, excerpt, locator, extraction_method, verification_status
+      )
+      select
+        ${taskId}::uuid,
+        ${sourceId}::uuid,
+        passage.excerpt,
+        passage.locator,
+        passage.extraction_method,
+        passage.verification_status
+      from jsonb_to_recordset(${this.sql.json(rows)}) as passage(
+        excerpt text,
+        locator text,
+        extraction_method text,
+        verification_status text
+      )
+      returning
+        id,
+        task_id as "taskId",
+        source_id as "sourceId",
+        excerpt,
+        locator,
+        extraction_method as "extractionMethod",
+        verification_status as "verificationStatus"
+    `;
   }
 
   public async appendEvent(

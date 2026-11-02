@@ -21,6 +21,10 @@ function page(url: string, text: string): BrowserReadResult {
   };
 }
 
+function usefulArticleText(label: string): string {
+  return `At ${label}, program managers publish a distinct award overview and applicant rules. Applicants considering ${label} should verify the deadline on the primary page and gather transcripts, references, and proof of enrollment before submitting anything. For ${label}, the selection panel weighs academic readiness, community service, and financial need; students can contact the office to ask about renewal and payment timelines.`;
+}
+
 function adapterFor(readPage: BrowserAdapter['readPage']): BrowserAdapter {
   return { readPage };
 }
@@ -46,6 +50,10 @@ describe('research service security-challenge handling', () => {
       status: 'incomplete',
       securityChallengeSourceCount: 2,
       unreadableSourceCount: 0,
+      retrievedSourceCount: 2,
+      evidenceSourceCount: 0,
+      duplicateSourceCount: 0,
+      lowQualitySourceCount: 0,
     });
     expect(result.sources).toHaveLength(2);
     expect(
@@ -87,7 +95,7 @@ describe('research service security-challenge handling', () => {
           url,
           url.includes('blocked')
             ? challengeText
-            : 'An accessible scholarship page contains this source text.',
+            : usefulArticleText('accessible scholarship page'),
         ),
       ),
       repository,
@@ -103,6 +111,10 @@ describe('research service security-challenge handling', () => {
       status: 'incomplete',
       securityChallengeSourceCount: 1,
       unreadableSourceCount: 0,
+      retrievedSourceCount: 2,
+      evidenceSourceCount: 1,
+      duplicateSourceCount: 0,
+      lowQualitySourceCount: 0,
     });
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.excerpt).not.toContain('Performing security verification');
@@ -151,6 +163,10 @@ describe('research service discovery', () => {
       status: 'incomplete',
       securityChallengeSourceCount: 0,
       unreadableSourceCount: 1,
+      retrievedSourceCount: 1,
+      evidenceSourceCount: 0,
+      duplicateSourceCount: 0,
+      lowQualitySourceCount: 0,
     });
     expect(result.sources[0]?.quality.accessStatus).toBe('unavailable');
     expect(result.evidence).toEqual([]);
@@ -166,7 +182,7 @@ describe('research service discovery', () => {
         if (url.endsWith('/blocked')) {
           throw new BrowserReadError('NAVIGATION_FAILED', '403', url);
         }
-        return page(url, 'A readable scholarship page.');
+        return page(url, usefulArticleText('readable scholarship page'));
       }),
       new InMemoryTaskRepository(),
       undefined,
@@ -189,6 +205,10 @@ describe('research service discovery', () => {
       status: 'incomplete',
       securityChallengeSourceCount: 0,
       unreadableSourceCount: 1,
+      retrievedSourceCount: 1,
+      evidenceSourceCount: 1,
+      duplicateSourceCount: 0,
+      lowQualitySourceCount: 0,
     });
     expect(result.sources).toHaveLength(1);
     expect(result.evidence).toHaveLength(1);
@@ -208,7 +228,7 @@ describe('research service discovery', () => {
             url,
           );
         }
-        return page(url, 'Accessible statistics appear on this readable page.');
+        return page(url, usefulArticleText('accessible public statistics page'));
       }),
       repository,
       claimExtractor,
@@ -230,19 +250,28 @@ describe('research service discovery', () => {
     });
 
     expect(attempted).toEqual(['https://example.com/oversized', 'https://example.org/readable']);
-    expect(result.discovery).toEqual({
+    expect(result.discovery).toMatchObject({
       provider: 'mock',
       candidateCount: 2,
       attemptedCount: 2,
+      selectedCount: 2,
+      retrievalAttemptCount: 2,
+      successfulReadCount: 1,
+      usefulContentCount: 1,
+      retryCount: 0,
     });
     expect(result.coverage).toEqual({
       status: 'incomplete',
       securityChallengeSourceCount: 0,
       unreadableSourceCount: 1,
+      retrievedSourceCount: 1,
+      evidenceSourceCount: 1,
+      duplicateSourceCount: 0,
+      lowQualitySourceCount: 0,
     });
     expect(result.sources).toHaveLength(1);
     expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0]?.excerpt).toContain('Accessible statistics');
+    expect(result.evidence[0]?.excerpt).toContain('accessible public statistics');
     expect(repository.getEvidence(taskId)).toHaveLength(1);
     expect(claimExtractor.extract).toHaveBeenCalledOnce();
   });
@@ -263,10 +292,15 @@ describe('research service discovery', () => {
     expect(result.coverage.status).toBe('incomplete');
     expect(result.sources).toEqual([]);
     expect(result.findings).toEqual([]);
-    expect(result.discovery).toEqual({
+    expect(result.discovery).toMatchObject({
       provider: 'firecrawl',
       candidateCount: 0,
       attemptedCount: 0,
+      selectedCount: 0,
+      retrievalAttemptCount: 0,
+      successfulReadCount: 0,
+      usefulContentCount: 0,
+      retryCount: 0,
     });
   });
 
@@ -290,7 +324,7 @@ describe('research service discovery', () => {
           url,
           url.endsWith('/blocked')
             ? challengeText
-            : 'Accessible scholarship information appears on this page.',
+            : usefulArticleText('accessible scholarship information'),
         );
       }),
       repository,
@@ -304,14 +338,19 @@ describe('research service discovery', () => {
     });
 
     expect(attempted).toEqual(['https://example.com/blocked', 'https://example.org/readable']);
-    expect(result.discovery).toEqual({
+    expect(result.discovery).toMatchObject({
       provider: 'firecrawl',
       candidateCount: 2,
       attemptedCount: 2,
+      selectedCount: 2,
+      retrievalAttemptCount: 2,
+      successfulReadCount: 2,
+      usefulContentCount: 1,
+      retryCount: 0,
     });
     expect(result.coverage.status).toBe('incomplete');
     expect(result.sources).toHaveLength(2);
     expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0]?.excerpt).toContain('Accessible scholarship information');
+    expect(result.evidence[0]?.excerpt).toContain('accessible scholarship information');
   });
 });

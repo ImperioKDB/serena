@@ -118,6 +118,18 @@ export class InMemoryTaskRepository implements TaskRepository, RequestAdmissionS
     return evidence;
   }
 
+  public async recordEvidenceBatch(
+    taskId: string,
+    sourceId: string,
+    inputs: CreateEvidenceInput[],
+  ): Promise<ResearchEvidenceRecord[]> {
+    const records: ResearchEvidenceRecord[] = [];
+    for (const input of inputs) {
+      records.push(await this.recordEvidence(taskId, sourceId, input));
+    }
+    return records;
+  }
+
   public async appendEvent(
     taskId: string,
     eventType: string,
