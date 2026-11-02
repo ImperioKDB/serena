@@ -21,6 +21,25 @@ function analysisMessage(
   }
 }
 
+function failureMessage(
+  kind: NonNullable<NonNullable<ResearchResultData['modelAnalysis']>['failure']>['kind'],
+): string {
+  switch (kind) {
+    case 'rate_limited':
+      return 'The model provider is rate limiting requests. Please try again shortly.';
+    case 'upstream_unavailable':
+      return 'The model provider is temporarily unavailable. The saved evidence is still available for review.';
+    case 'timeout':
+      return 'The model analysis exceeded its time budget. The saved evidence is still available for review.';
+    case 'cancelled':
+      return 'The model analysis was cancelled before it completed. The saved evidence is still available for review.';
+    case 'model_unavailable':
+      return 'The configured model is unavailable. Check the provider model configuration before retrying.';
+    case 'invalid_response':
+      return 'The model returned an invalid structured response. The saved evidence is still available for review.';
+  }
+}
+
 function candidateStatusLabel(outcome: CandidateOutcome): string {
   switch (outcome.status) {
     case 'security-challenge':
@@ -133,6 +152,18 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
                 ? ` · ${analysis.inputTokens ?? 0} input / ${analysis.outputTokens ?? 0} output tokens`
                 : ''}
             </small>
+          ) : null}
+          {analysis.failure ? (
+            <div className="analysis-failure" role="alert">
+              <strong>Why analysis did not complete</strong>
+              <span>{failureMessage(analysis.failure.kind)}</span>
+              <small>
+                {analysis.failure.provider} · {analysis.failure.operation.replaceAll('_', ' ')}
+                {analysis.failure.statusCode !== undefined
+                  ? ` · HTTP ${analysis.failure.statusCode}`
+                  : ''}
+              </small>
+            </div>
           ) : null}
           {analysis.potentialContradictions.length > 0 ? (
             <div>

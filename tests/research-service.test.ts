@@ -4,6 +4,7 @@ import type { BrowserAdapter } from '../src/browser/browser-adapter.js';
 import { BrowserReadError, type BrowserReadResult } from '../src/core/result.js';
 import { InMemoryTaskRepository } from '../src/persistence/in-memory-task-repository.js';
 import type { AiClaimFinding, ClaimExtractor } from '../src/research/claim-extractor.js';
+import { ModelProviderError } from '../src/research/model-provider.js';
 import { ResearchService } from '../src/research/research-service.js';
 import type { SearchProvider } from '../src/search/search-provider.js';
 
@@ -352,5 +353,41 @@ describe('research service discovery', () => {
     expect(result.sources).toHaveLength(2);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.excerpt).toContain('accessible scholarship information');
+  });
+});
+
+describe('research service model diagnostics', () => {
+  it('persists a safe provider failure while retaining saved evidence', async () => {
+    const repository = new InMemoryTaskRepository();
+    const claimExtractor: ClaimExtractor = {
+      provider: 'gemini',
+      model: 'gemini-test-model',
+      analyzeEvidence: vi.fn(async () => {
+        throw new ModelProviderError('gemini', 'upstream_error', 503);
+      }),
+      extract: vi.fn(async () => []),
+    };
+    const service = new ResearchService(
+      adapterFor(async (url) => page(url, usefulArticleText('public scholarship page'))),
+      repository,
+      claimExtractor,
+    );
+
+    const { result } = await service.run({
+      request: 'Find public scholarship information.',
+      sources: ['https://example.com/scholarship'],
+    });
+
+    expect(result.evidence).toHaveLength(1);
+    expect(result.modelAnalysis).toMatchObject({
+      status: 'failed',
+      failure: {
+        provider: 'gemini',
+        operation: 'evidence_analysis',
+        kind: 'upstream_unavailable',
+        statusCode: 503,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('Research model provider failed');
   });
 });

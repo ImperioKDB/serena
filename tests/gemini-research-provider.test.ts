@@ -33,9 +33,13 @@ function analysisPayload(evidenceId = 'evidence-1'): string {
   });
 }
 
-function makeProvider(create: ReturnType<typeof vi.fn>, timeout = 1_000): GeminiResearchProvider {
+function makeProvider(
+  create: ReturnType<typeof vi.fn>,
+  timeout = 1_000,
+  delay: (ms: number, signal?: AbortSignal) => Promise<void> = async () => undefined,
+): GeminiResearchProvider {
   const client = { interactions: { create } } as never;
-  return new GeminiResearchProvider('test-key', 'gemini-test-model', client, timeout);
+  return new GeminiResearchProvider('test-key', 'gemini-test-model', client, timeout, delay);
 }
 
 function analysisInput(signal?: AbortSignal) {
@@ -109,6 +113,29 @@ describe('GeminiResearchProvider', () => {
 
     expect((await makeProvider(create).analyzeEvidence(analysisInput())).findings).toHaveLength(1);
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries one transient 503 with bounded backoff and does not delegate retries to the SDK', async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('service unavailable'), { status: 503 }))
+      .mockResolvedValueOnce({ status: 'completed', output_text: analysisPayload() });
+    const delay = vi.fn<(ms: number, signal?: AbortSignal) => Promise<void>>(
+      async () => undefined,
+    );
+
+    await expect(
+      makeProvider(create, 6_000, delay).analyzeEvidence(analysisInput()),
+    ).resolves.toMatchObject({ provider: 'gemini' });
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(delay).toHaveBeenCalledOnce();
+    expect(delay.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(250);
+    expect(delay.mock.calls[0]?.[0]).toBeLessThanOrEqual(500);
+    expect(create.mock.calls[0]?.[1]).toMatchObject({
+      timeout_ms: 6_000,
+      retries: { strategy: 'none' },
+    });
   });
 
   it('passes caller cancellation to the SDK and reports cancellation', async () => {

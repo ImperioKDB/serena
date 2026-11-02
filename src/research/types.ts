@@ -66,6 +66,21 @@ export interface ResearchFinding {
   reviewRequired?: boolean;
 }
 
+export type ModelAnalysisFailureKind =
+  | 'rate_limited'
+  | 'upstream_unavailable'
+  | 'timeout'
+  | 'cancelled'
+  | 'model_unavailable'
+  | 'invalid_response';
+
+export interface ModelAnalysisFailure {
+  provider: string;
+  operation: 'candidate_evaluation' | 'evidence_analysis';
+  kind: ModelAnalysisFailureKind;
+  statusCode?: number;
+}
+
 export interface ResearchResult {
   request: string;
   discovery?: {
@@ -123,6 +138,7 @@ export interface ResearchResult {
     status: 'completed' | 'deterministic-only' | 'failed' | 'disabled' | 'skipped';
     provider?: string;
     model?: string;
+    failure?: ModelAnalysisFailure;
     requestCount?: number;
     inputTokens?: number;
     outputTokens?: number;

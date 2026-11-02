@@ -12,8 +12,12 @@ import {
 import type { ResearchEvidenceRecord } from './types.js';
 
 const DEFAULT_MODEL = 'gemini-3.8-flash';
-const MAX_REQUEST_TIMEOUT_MS = 12_000;
-const MAX_RETRY_DELAY_MS = 500;
+// Two attempts plus the maximum jittered delay must fit inside the service's
+// 15-second evidence-analysis budget. The enclosing AbortSignal remains the
+// final authority for shorter operations such as candidate evaluation.
+const MAX_REQUEST_TIMEOUT_MS = 6_000;
+const RETRY_BASE_DELAY_MS = 250;
+const MAX_RETRY_DELAY_MS = 1_000;
 
 const candidateEvaluationSchema = z
   .object({
@@ -205,6 +209,8 @@ type GeminiRequest = (
   options: { timeout_ms: number; signal?: AbortSignal; retries: { strategy: 'none' } },
 ) => Promise<InteractionResult>;
 
+type RetryDelay = (ms: number, signal?: AbortSignal) => Promise<void>;
+
 function safeStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const candidate = error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } };
@@ -252,6 +258,11 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
     };
     signal?.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+function retryDelayMs(attempt: number): number {
+  const exponentialDelay = Math.min(MAX_RETRY_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attempt);
+  return exponentialDelay + Math.floor(Math.random() * (exponentialDelay + 1));
 }
 
 function safeCandidatePath(rawUrl: string): { host: string; path: string } {
@@ -349,6 +360,7 @@ export class GeminiResearchProvider implements ClaimExtractor {
     public readonly model = DEFAULT_MODEL,
     client?: GeminiClient,
     requestTimeoutMs = MAX_REQUEST_TIMEOUT_MS,
+    private readonly delay: RetryDelay = abortableDelay,
   ) {
     this.client = client ?? new GoogleGenAI({ apiKey });
     this.requestTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS));
@@ -470,7 +482,7 @@ export class GeminiResearchProvider implements ClaimExtractor {
         const typedError = classifyFailure(error, signal);
         lastError = typedError;
         if (attempt === 0 && isRetryable(typedError) && !signal?.aborted) {
-          await abortableDelay(MAX_RETRY_DELAY_MS, signal);
+          await this.delay(retryDelayMs(attempt), signal);
           continue;
         }
         throw typedError;

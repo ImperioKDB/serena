@@ -16,7 +16,13 @@ import { selectSearchCandidates, type CandidateSelection } from './candidate-ran
 import { extractCrossSourceFindings } from './finding-extractor.js';
 import { ModelProviderError, type ModelProviderOperation } from './model-provider.js';
 import { assessSourceQuality, calculateRelevanceScore } from './source-quality.js';
-import type { CandidateOutcome, ResearchResult, ResearchSourceRecord } from './types.js';
+import type {
+  CandidateOutcome,
+  ModelAnalysisFailure,
+  ModelAnalysisFailureKind,
+  ResearchResult,
+  ResearchSourceRecord,
+} from './types.js';
 import type { SearchProvider, SearchCandidate } from '../search/search-provider.js';
 
 const MAX_EVIDENCE_PASSAGES_PER_SOURCE = 6;
@@ -245,19 +251,34 @@ function modelFailureDetails(
   error: unknown,
   operation: ModelProviderOperation,
   provider: string | undefined,
-): { provider: string; operation: ModelProviderOperation; kind: string; statusCode?: number } {
+): ModelAnalysisFailure {
+  const safeStatusCode = (statusCode: number | undefined): number | undefined =>
+    statusCode !== undefined && statusCode >= 400 && statusCode <= 599 ? statusCode : undefined;
+  const publicKind = (kind: string): ModelAnalysisFailureKind => {
+    switch (kind) {
+      case 'rate_limited':
+      case 'timeout':
+      case 'cancelled':
+      case 'model_unavailable':
+      case 'invalid_response':
+        return kind;
+      default:
+        return 'upstream_unavailable';
+    }
+  };
   if (error instanceof ModelProviderError) {
+    const statusCode = safeStatusCode(error.statusCode);
     return {
       provider: error.provider,
       operation,
-      kind: error.kind,
-      ...(error.statusCode === undefined ? {} : { statusCode: error.statusCode }),
+      kind: publicKind(error.kind),
+      ...(statusCode === undefined ? {} : { statusCode }),
     };
   }
   return {
     provider: provider ?? 'configured-provider',
     operation,
-    kind: 'upstream_error',
+    kind: 'upstream_unavailable',
   };
 }
 
@@ -922,7 +943,8 @@ export class ResearchService {
               'evidence_analysis',
               this.claimExtractor.provider,
             );
-            await this.repository.appendEvent(task.id, 'model_analysis_failed', failure);
+            modelAnalysis.failure = failure;
+            await this.repository.appendEvent(task.id, 'model_analysis_failed', { ...failure });
             findings = exactFindings;
           }
         }
@@ -1065,6 +1087,6 @@ export class ResearchService {
     operation: ModelProviderOperation,
   ): Promise<void> {
     const failure = modelFailureDetails(error, operation, this.claimExtractor?.provider);
-    await this.repository.appendEvent(taskId, 'model_provider_failure', failure);
+    await this.repository.appendEvent(taskId, 'model_provider_failure', { ...failure });
   }
 }

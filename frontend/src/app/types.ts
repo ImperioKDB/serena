@@ -128,6 +128,18 @@ export interface ResearchResult {
     status: 'completed' | 'deterministic-only' | 'failed' | 'disabled' | 'skipped';
     provider?: string;
     model?: string;
+    failure?: {
+      provider: string;
+      operation: 'candidate_evaluation' | 'evidence_analysis';
+      kind:
+        | 'rate_limited'
+        | 'upstream_unavailable'
+        | 'timeout'
+        | 'cancelled'
+        | 'model_unavailable'
+        | 'invalid_response';
+      statusCode?: number;
+    };
     requestCount?: number;
     inputTokens?: number;
     outputTokens?: number;
