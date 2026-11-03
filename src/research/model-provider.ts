@@ -13,6 +13,8 @@ export type ModelProviderFailureKind =
   | 'cancelled'
   | 'model_unavailable'
   | 'invalid_response'
+  | 'authentication_failed'
+  | 'invalid_request'
   | 'upstream_error';
 
 export type ModelProviderOperation = 'candidate_evaluation' | 'evidence_analysis';
@@ -22,6 +24,10 @@ export interface ModelProviderFailureDiagnostic {
   operation: ModelProviderOperation;
   kind: ModelProviderFailureKind;
   statusCode?: number;
+  errorCode?: string;
+  attemptCount?: number;
+  retryCount?: number;
+  durationMs?: number;
 }
 
 export class ModelProviderError extends Error {
@@ -29,6 +35,7 @@ export class ModelProviderError extends Error {
     public readonly provider: string,
     public readonly kind: ModelProviderFailureKind,
     public readonly statusCode?: number,
+    public readonly diagnostics: Omit<ModelProviderFailureDiagnostic, 'provider' | 'operation' | 'kind'> = {},
   ) {
     super(`Research model provider failed (${kind}).`);
     this.name = 'ModelProviderError';
@@ -51,20 +58,28 @@ function statusOf(error: unknown): number | undefined {
 function safeFailure(provider: string, error: unknown): ModelProviderError {
   if (error instanceof ModelProviderError) return error;
   if (error instanceof GeminiProviderError) {
-    return new ModelProviderError(provider, error.kind, error.statusCode);
+    return new ModelProviderError(provider, error.kind, error.statusCode, {
+      ...error.diagnostics,
+    });
   }
   const statusCode = statusOf(error);
   const text = error instanceof Error ? `${error.name} ${error.message}`.toLocaleLowerCase() : '';
   const kind: ModelProviderFailureKind =
-    statusCode === 429 || /rate.?limit|resource_exhausted/u.test(text)
-      ? 'rate_limited'
-      : statusCode === 404 || /model.{0,30}(?:not found|unavailable)/u.test(text)
-        ? 'model_unavailable'
-        : /aborterror|timeout|timed? ?out/u.test(text)
-          ? 'timeout'
-          : error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError')
-            ? 'invalid_response'
-            : 'upstream_error';
+    statusCode === 401 ||
+    statusCode === 403 ||
+    /unauthenticated|invalid.?api.?key|permission denied/u.test(text)
+      ? 'authentication_failed'
+      : statusCode === 400 || /invalid argument|invalid request|bad request/u.test(text)
+        ? 'invalid_request'
+        : statusCode === 429 || /rate.?limit|resource_exhausted/u.test(text)
+          ? 'rate_limited'
+          : statusCode === 404 || /model.{0,30}(?:not found|unavailable)/u.test(text)
+            ? 'model_unavailable'
+            : /aborterror|timeout|timed? ?out/u.test(text)
+              ? 'timeout'
+              : error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError')
+                ? 'invalid_response'
+                : 'upstream_error';
   return new ModelProviderError(provider, kind, statusCode);
 }
 
@@ -114,6 +129,7 @@ export class ModelProviderChain implements ClaimExtractor {
           operation: 'candidate_evaluation',
           kind: lastError.kind,
           ...(lastError.statusCode === undefined ? {} : { statusCode: lastError.statusCode }),
+          ...lastError.diagnostics,
           error: lastError,
         });
       }
@@ -145,6 +161,7 @@ export class ModelProviderChain implements ClaimExtractor {
           operation: 'evidence_analysis',
           kind: lastError.kind,
           ...(lastError.statusCode === undefined ? {} : { statusCode: lastError.statusCode }),
+          ...lastError.diagnostics,
           error: lastError,
         });
       }
@@ -177,6 +194,7 @@ export class ModelProviderChain implements ClaimExtractor {
         operation: input.operation,
         kind: input.error.kind,
         ...(input.error.statusCode === undefined ? {} : { statusCode: input.error.statusCode }),
+        ...input.error.diagnostics,
       });
     } catch {
       // Diagnostics must never interrupt the research run.

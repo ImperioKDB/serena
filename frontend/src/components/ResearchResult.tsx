@@ -35,6 +35,10 @@ function failureMessage(
       return 'The model analysis was cancelled before it completed. The saved evidence is still available for review.';
     case 'model_unavailable':
       return 'The configured model is unavailable. Check the provider model configuration before retrying.';
+    case 'authentication_failed':
+      return 'The model provider rejected authentication. Check the server-side provider credentials before retrying.';
+    case 'invalid_request':
+      return 'The model provider rejected the request format. Check the model and structured-output configuration.';
     case 'invalid_response':
       return 'The model returned an invalid structured response. The saved evidence is still available for review.';
   }
@@ -161,6 +165,12 @@ export function ResearchResult({ result }: { result: ResearchResultData }): Reac
                 {analysis.failure.provider} · {analysis.failure.operation.replaceAll('_', ' ')}
                 {analysis.failure.statusCode !== undefined
                   ? ` · HTTP ${analysis.failure.statusCode}`
+                  : ''}
+                {analysis.failure.attemptCount !== undefined
+                  ? ` · ${analysis.failure.attemptCount} attempt${analysis.failure.attemptCount === 1 ? '' : 's'}`
+                  : ''}
+                {analysis.failure.durationMs !== undefined
+                  ? ` · ${analysis.failure.durationMs} ms`
                   : ''}
               </small>
             </div>

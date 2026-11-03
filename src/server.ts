@@ -41,6 +41,10 @@ const claimExtractor = createModelProvider({
         operation: diagnostic.operation,
         kind: diagnostic.kind,
         ...(diagnostic.statusCode === undefined ? {} : { statusCode: diagnostic.statusCode }),
+        ...(diagnostic.errorCode === undefined ? {} : { errorCode: diagnostic.errorCode }),
+        ...(diagnostic.attemptCount === undefined ? {} : { attemptCount: diagnostic.attemptCount }),
+        ...(diagnostic.retryCount === undefined ? {} : { retryCount: diagnostic.retryCount }),
+        ...(diagnostic.durationMs === undefined ? {} : { durationMs: diagnostic.durationMs }),
       }),
     );
   },

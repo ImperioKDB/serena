@@ -260,6 +260,8 @@ function modelFailureDetails(
       case 'timeout':
       case 'cancelled':
       case 'model_unavailable':
+      case 'authentication_failed':
+      case 'invalid_request':
       case 'invalid_response':
         return kind;
       default:
@@ -273,6 +275,18 @@ function modelFailureDetails(
       operation,
       kind: publicKind(error.kind),
       ...(statusCode === undefined ? {} : { statusCode }),
+      ...(error.diagnostics.errorCode === undefined
+        ? {}
+        : { errorCode: error.diagnostics.errorCode }),
+      ...(error.diagnostics.attemptCount === undefined
+        ? {}
+        : { attemptCount: error.diagnostics.attemptCount }),
+      ...(error.diagnostics.retryCount === undefined
+        ? {}
+        : { retryCount: error.diagnostics.retryCount }),
+      ...(error.diagnostics.durationMs === undefined
+        ? {}
+        : { durationMs: error.diagnostics.durationMs }),
     };
   }
   return {

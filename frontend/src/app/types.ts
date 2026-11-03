@@ -137,8 +137,14 @@ export interface ResearchResult {
         | 'timeout'
         | 'cancelled'
         | 'model_unavailable'
+        | 'authentication_failed'
+        | 'invalid_request'
         | 'invalid_response';
       statusCode?: number;
+      errorCode?: string;
+      attemptCount?: number;
+      retryCount?: number;
+      durationMs?: number;
     };
     requestCount?: number;
     inputTokens?: number;

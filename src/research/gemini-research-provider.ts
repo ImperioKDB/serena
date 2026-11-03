@@ -175,12 +175,22 @@ export type GeminiFailureKind =
   | 'cancelled'
   | 'model_unavailable'
   | 'invalid_response'
+  | 'authentication_failed'
+  | 'invalid_request'
   | 'upstream_error';
+
+export interface GeminiFailureDiagnostics {
+  errorCode?: string;
+  attemptCount?: number;
+  retryCount?: number;
+  durationMs?: number;
+}
 
 export class GeminiProviderError extends Error {
   public constructor(
     public readonly kind: GeminiFailureKind,
     public readonly statusCode?: number,
+    public readonly diagnostics: GeminiFailureDiagnostics = {},
   ) {
     super(`Gemini provider request failed (${kind}).`);
     this.name = 'GeminiProviderError';
@@ -220,24 +230,55 @@ function safeStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+function safeErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const record = error as {
+    code?: unknown;
+    status?: unknown;
+    error?: { code?: unknown; status?: unknown };
+    response?: { code?: unknown; status?: unknown };
+  };
+  for (const value of [
+    record.code,
+    record.status,
+    record.error?.code,
+    record.error?.status,
+    record.response?.code,
+    record.response?.status,
+  ]) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toUpperCase();
+    if (/^[A-Z][A-Z0-9_.-]{1,79}$/u.test(normalized)) return normalized;
+  }
+  return undefined;
+}
+
 function classifyFailure(error: unknown, signal?: AbortSignal): GeminiProviderError {
   if (signal?.aborted) return new GeminiProviderError('cancelled');
   if (error instanceof GeminiProviderError) return error;
   const status = safeStatus(error);
   const text = error instanceof Error ? `${error.name} ${error.message}`.toLocaleLowerCase() : '';
+  const errorCode = safeErrorCode(error);
+  const diagnostics = errorCode === undefined ? {} : { errorCode };
   if (status === 429 || /resource_exhausted|rate.?limit/u.test(text)) {
-    return new GeminiProviderError('rate_limited', status);
+    return new GeminiProviderError('rate_limited', status, diagnostics);
+  }
+  if (status === 401 || status === 403 || /unauthenticated|invalid.?api.?key|permission denied/u.test(text)) {
+    return new GeminiProviderError('authentication_failed', status, diagnostics);
+  }
+  if (status === 400 || /invalid argument|invalid request|bad request/u.test(text)) {
+    return new GeminiProviderError('invalid_request', status, diagnostics);
   }
   if (status === 404 || /model.{0,30}(?:not found|unavailable)|not found.{0,30}model/u.test(text)) {
-    return new GeminiProviderError('model_unavailable', status);
+    return new GeminiProviderError('model_unavailable', status, diagnostics);
   }
   if (
     /aborterror|requesttimeouterror|timed? ?out|timeout/u.test(text) ||
     (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
   ) {
-    return new GeminiProviderError('timeout', status);
+    return new GeminiProviderError('timeout', status, diagnostics);
   }
-  return new GeminiProviderError('upstream_error', status);
+  return new GeminiProviderError('upstream_error', status, diagnostics);
 }
 
 function isRetryable(error: GeminiProviderError): boolean {
@@ -452,6 +493,7 @@ export class GeminiResearchProvider implements ClaimExtractor {
     signal?: AbortSignal,
   ): Promise<{ parsed: T; usage?: InteractionResult['usage'] }> {
     let lastError: GeminiProviderError | undefined;
+    const startedAt = performance.now();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (signal?.aborted) throw new GeminiProviderError('cancelled');
       try {
@@ -485,7 +527,12 @@ export class GeminiResearchProvider implements ClaimExtractor {
           await this.delay(retryDelayMs(attempt), signal);
           continue;
         }
-        throw typedError;
+        throw new GeminiProviderError(typedError.kind, typedError.statusCode, {
+          ...typedError.diagnostics,
+          attemptCount: attempt + 1,
+          retryCount: attempt,
+          durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        });
       }
     }
     throw lastError ?? new GeminiProviderError('upstream_error');

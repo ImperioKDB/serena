@@ -105,6 +105,35 @@ describe('GeminiResearchProvider', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
+  it('classifies authentication failures without retrying and retains only a safe provider code', async () => {
+    const create = vi.fn().mockRejectedValue(
+      Object.assign(new Error('authentication failed'), {
+        status: 401,
+        code: 'UNAUTHENTICATED',
+      }),
+    );
+
+    await expect(makeProvider(create).analyzeEvidence(analysisInput())).rejects.toMatchObject({
+      kind: 'authentication_failed',
+      statusCode: 401,
+      diagnostics: { errorCode: 'UNAUTHENTICATED', attemptCount: 1, retryCount: 0 },
+    } satisfies Partial<GeminiProviderError>);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it('classifies invalid requests without retrying', async () => {
+    const create = vi.fn().mockRejectedValue(
+      Object.assign(new Error('invalid argument'), { status: 400, code: 'INVALID_ARGUMENT' }),
+    );
+
+    await expect(makeProvider(create).analyzeEvidence(analysisInput())).rejects.toMatchObject({
+      kind: 'invalid_request',
+      statusCode: 400,
+      diagnostics: { errorCode: 'INVALID_ARGUMENT', attemptCount: 1, retryCount: 0 },
+    } satisfies Partial<GeminiProviderError>);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
   it('retries one transient rate limit and then completes', async () => {
     const create = vi
       .fn()
@@ -136,6 +165,26 @@ describe('GeminiResearchProvider', () => {
       timeout_ms: 6_000,
       retries: { strategy: 'none' },
     });
+  });
+
+  it('records bounded diagnostics after transient retry exhaustion', async () => {
+    const create = vi.fn().mockRejectedValue(
+      Object.assign(new Error('service unavailable'), { status: 503, code: 'UNAVAILABLE' }),
+    );
+    const delay = vi.fn<(ms: number, signal?: AbortSignal) => Promise<void>>(
+      async () => undefined,
+    );
+
+    await expect(makeProvider(create, 6_000, delay).analyzeEvidence(analysisInput())).rejects.toMatchObject({
+      kind: 'upstream_error',
+      statusCode: 503,
+      diagnostics: {
+        errorCode: 'UNAVAILABLE',
+        attemptCount: 2,
+        retryCount: 1,
+      },
+    } satisfies Partial<GeminiProviderError>);
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it('passes caller cancellation to the SDK and reports cancellation', async () => {

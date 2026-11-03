@@ -72,6 +72,8 @@ export type ModelAnalysisFailureKind =
   | 'timeout'
   | 'cancelled'
   | 'model_unavailable'
+  | 'authentication_failed'
+  | 'invalid_request'
   | 'invalid_response';
 
 export interface ModelAnalysisFailure {
@@ -79,6 +81,10 @@ export interface ModelAnalysisFailure {
   operation: 'candidate_evaluation' | 'evidence_analysis';
   kind: ModelAnalysisFailureKind;
   statusCode?: number;
+  errorCode?: string;
+  attemptCount?: number;
+  retryCount?: number;
+  durationMs?: number;
 }
 
 export interface ResearchResult {
